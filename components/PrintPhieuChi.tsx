@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Transaction, Project, User } from '../types';
-import { formatCurrency, formatDateForPrint, formatCurrencyToWords, calculateInterest, calculateInterestWithRateChange, formatDate, getVNNow, getVNStartOfDay, fromVNTime, VN_TIMEZONE } from '../utils/helpers';
+import { formatCurrency, formatDateForPrint, formatCurrencyToWords, calculateInterest, calculateInterestWithRateChange, formatDate, getVNNow, getVNStartOfDay, fromVNTime, toVNTime, VN_TIMEZONE } from '../utils/helpers';
 import { format as formatTz } from 'date-fns-tz';
 import { Printer, Loader2, X, Edit2, Check } from 'lucide-react';
 import { api } from '../services/api';
@@ -99,15 +99,21 @@ export const PrintPhieuChi: React.FC<PrintPhieuChiProps> = ({
 
     // Keep default editable GN date in sync when opening the preview / when transaction changes
     useEffect(() => {
-        // Always default to today's date in VN timezone (from live clock) when opening preview
-        // This ensures the date picker shows the current date as default
-        const todayVN = getVNNow();
-        const todayStr = formatTz(todayVN, 'yyyy-MM-dd', { timeZone: VN_TIMEZONE });
-        setDisbursementDateOverride(todayStr);
+        // If transaction has disbursementDate, use it; otherwise default to today's date in VN timezone
+        // This ensures the date picker shows the correct date when opening preview
+        let dateStr: string;
+        if (transaction.disbursementDate) {
+            const vnDate = toVNTime(transaction.disbursementDate);
+            dateStr = formatTz(vnDate, 'yyyy-MM-dd', { timeZone: VN_TIMEZONE });
+        } else {
+            const todayVN = getVNNow();
+            dateStr = formatTz(todayVN, 'yyyy-MM-dd', { timeZone: VN_TIMEZONE });
+        }
+        setDisbursementDateOverride(dateStr);
         setIsEditingDisbursementDate(false);
         setIsSavingDisbursementDate(false);
         setPrintDateOverride('');
-    }, [transaction.id]);
+    }, [transaction.id, transaction.disbursementDate]);
 
     const handleSaveDisbursementDate = async () => {
         if (!transaction.id || !disbursementDateOverride) return;

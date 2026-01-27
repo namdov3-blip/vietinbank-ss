@@ -39,8 +39,20 @@ export const getVNEndOfDay = (date?: Date | string): Date => {
   return vnDate;
 };
 
+// Chuẩn hóa làm tròn: giữ 2 chữ số thập phân, .49 trở xuống làm tròn xuống, .50 trở lên làm tròn lên
+export const roundTo2 = (value: number): number => {
+  if (!isFinite(value)) return 0;
+  return Math.round(value * 100) / 100;
+};
+
 export const formatCurrency = (amount: number): string => {
-  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
+  const rounded = roundTo2(amount);
+  return new Intl.NumberFormat('vi-VN', {
+    style: 'currency',
+    currency: 'VND',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(rounded);
 };
 
 // Format number with comma separator (for input display)

@@ -11,7 +11,7 @@ import {
   TransactionStatus,
   AuditLogItem
 } from '../types';
-import { formatCurrency, formatDate, calculateInterest, formatNumberWithComma, parseNumberFromComma } from '../utils/helpers';
+import { formatCurrency, formatDate, calculateInterest, formatNumberWithComma, parseNumberFromComma, roundTo2 } from '../utils/helpers';
 import {
   Wallet, Plus, History, AlertCircle, PiggyBank, X
 } from 'lucide-react';
@@ -141,7 +141,7 @@ export const BankBalance: React.FC<BankBalanceProps> = ({
           </div>
           <h3 className="text-[11px] font-bold text-blue-700 uppercase tracking-widest mb-1">Số dư hiện tại</h3>
           <p className="text-2xl font-bold text-slate-900 tracking-tight">
-            {formatCurrency(Math.round(pendingData.principal + pendingData.interest + pendingData.supplementary))}
+            {formatCurrency(roundTo2(pendingData.principal + pendingData.interest + pendingData.supplementary))}
           </p>
           <p className="text-[10px] font-medium text-blue-600 mt-2">Bằng tiền chưa GN (gốc + lãi + bổ sung của các giao dịch chưa giải ngân)</p>
         </GlassCard>
@@ -150,11 +150,11 @@ export const BankBalance: React.FC<BankBalanceProps> = ({
         <GlassCard className="relative overflow-hidden border-emerald-300 bg-emerald-50/30">
           <h3 className="text-[11px] font-bold text-emerald-700 uppercase tracking-widest mb-1">Lãi tạm tính</h3>
           <p className="text-2xl font-bold text-emerald-600 tracking-tight">
-            {formatCurrency(Math.round(pendingData.interest))}
+            {formatCurrency(roundTo2(pendingData.interest))}
           </p>
           {pendingData.locked > 0 && (
             <p className="text-[10px] font-medium text-slate-500 mt-1">
-              Đã chốt: {formatCurrency(Math.round(pendingData.locked))}
+              Đã chốt: {formatCurrency(roundTo2(pendingData.locked))}
             </p>
           )}
         </GlassCard>

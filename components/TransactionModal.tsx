@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Transaction, TransactionStatus, User, AuditLogItem, BankTransactionType, Project } from '../types';
-import { formatCurrency, formatDate, formatDateForPrint, formatCurrencyToWords, calculateInterest, calculateInterestWithRateChange, formatNumberWithComma, parseNumberFromComma, toVNTime, fromVNTime, VN_TIMEZONE } from '../utils/helpers';
+import { formatCurrency, formatDate, formatDateForPrint, formatCurrencyToWords, calculateInterest, calculateInterestWithRateChange, formatNumberWithComma, parseNumberFromComma, toVNTime, fromVNTime, VN_TIMEZONE, roundTo2 } from '../utils/helpers';
 import { format as formatTz } from 'date-fns-tz';
 import { X, Wallet, FileText, CheckCircle, Clock, History, Scale, Printer, Undo2, ArrowDownCircle, Edit2, Save, Plus, Calendar, Loader2 } from 'lucide-react';
 import { GlassCard } from './GlassCard';
@@ -242,22 +242,39 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       // Use the set disbursementDate if available, otherwise calculate to today
       const baseDate = transaction.effectiveInterestDate || project?.interestStartDate;
       const calcEndDate = effectiveDisbursementDate;
-      
-      const interest = calculateInterest(
-        transaction.compensation.totalApproved, 
-        interestRate, 
-        baseDate, 
-        calcEndDate
-      );
+
+      // Tính lãi giống backend (hỗ trợ mốc thay đổi lãi suất nếu có)
+      let interestForConfirm = 0;
+      if (hasRateChange) {
+        const interestResult = calculateInterestWithRateChange(
+          transaction.compensation.totalApproved,
+          baseDate,
+          calcEndDate,
+          interestRateChangeDate!,
+          interestRateBefore!,
+          interestRateAfter!
+        );
+        interestForConfirm = interestResult.totalInterest;
+      } else {
+        interestForConfirm = calculateInterest(
+          transaction.compensation.totalApproved,
+          interestRate,
+          baseDate,
+          calcEndDate
+        );
+      }
+
+      // Chuẩn hóa làm tròn về 2 chữ số để hiển thị khớp với phiếu/QR
+      interestForConfirm = roundTo2(interestForConfirm);
       const supplementary = transaction.supplementaryAmount || 0;
-      const calculatedTotal = transaction.compensation.totalApproved + interest + supplementary;
+      const calculatedTotal = roundTo2(transaction.compensation.totalApproved + interestForConfirm + supplementary);
 
       const dateDisplay = formatDate(effectiveDisbursementDate.toISOString());
 
       const confirmMsg = `Xác nhận CHI TRẢ cho hộ dân "${transaction.household.name}"?\n\n` +
         `- Ngày chi trả: ${dateDisplay}\n` +
         `- Số tiền: ${formatCurrency(calculatedTotal)}\n` +
-        `  (Gốc: ${formatCurrency(transaction.compensation.totalApproved)} + Lãi: ${formatCurrency(interest)} + Bổ sung: ${formatCurrency(supplementary)})\n\n` +
+        `  (Gốc: ${formatCurrency(transaction.compensation.totalApproved)} + Lãi: ${formatCurrency(interestForConfirm)} + Bổ sung: ${formatCurrency(supplementary)})\n\n` +
         `Thao tác này sẽ trừ tiền từ quỹ và không thể hoàn tác trực tiếp.`;
 
       if (window.confirm(confirmMsg)) {

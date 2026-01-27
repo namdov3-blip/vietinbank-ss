@@ -5,7 +5,7 @@ import { GlassCard } from '../components/GlassCard';
 import { StatusBadge } from '../components/StatusBadge';
 import { PrintPhieuChi } from '../components/PrintPhieuChi';
 import { PrintPhieuChiBatch } from '../components/PrintPhieuChiBatch';
-import { formatCurrency, formatDate, calculateInterest, calculateInterestWithRateChange, exportTransactionsToExcel } from '../utils/helpers';
+import { formatCurrency, formatDate, calculateInterest, calculateInterestWithRateChange, exportTransactionsToExcel, roundTo2 } from '../utils/helpers';
 import { Search, Filter, Download, Folder, Users, CheckCircle, Clock, DollarSign, PiggyBank, ChevronLeft, ChevronRight, Eye, FileText, Printer, Trash2 } from 'lucide-react';
 import api from '../services/api';
 
@@ -217,9 +217,9 @@ export const TransactionList: React.FC<TransactionListProps> = ({
 
     const totalInterest = tempInterest; // Chỉ trả về lãi tạm tính (chưa làm tròn)
 
-    // Làm tròn kết quả tổng cho hiển thị
-    const moneyDisbursed = Math.round(moneyDisbursedRaw);
-    const moneyNotDisbursed = Math.round(moneyNotDisbursedRaw);
+    // Làm tròn kết quả tổng cho hiển thị (2 chữ số thập phân)
+    const moneyDisbursed = roundTo2(moneyDisbursedRaw);
+    const moneyNotDisbursed = roundTo2(moneyNotDisbursedRaw);
 
     return {
       uniqueProjects,
@@ -227,8 +227,8 @@ export const TransactionList: React.FC<TransactionListProps> = ({
       notDisbursedCount: notDisbursedItems.length,
       moneyDisbursed,
       moneyNotDisbursed,
-      accruedInterest: Math.round(totalInterest),
-      lockedInterest: Math.round(lockedInterest) // Lãi đã chốt (để hiển thị)
+      accruedInterest: roundTo2(totalInterest),
+      lockedInterest: roundTo2(lockedInterest) // Lãi đã chốt (để hiển thị)
     };
   }, [filtered, interestRate, projects]);
 

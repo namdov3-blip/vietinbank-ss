@@ -2,7 +2,7 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { GlassCard } from '../components/GlassCard';
 import { Transaction, TransactionStatus, Project, User, BankAccount } from '../types';
-import { formatCurrency, calculateInterest, calculateInterestWithRateChange, formatDate } from '../utils/helpers';
+import { formatCurrency, calculateInterest, calculateInterestWithRateChange, formatDate, roundTo2 } from '../utils/helpers';
 import {
   ComposedChart,
   Line,
@@ -145,8 +145,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const supplementary = t.supplementaryAmount || 0;
     return acc + t.compensation.totalApproved + interest + supplementary;
   }, 0);
-  // Chỉ làm tròn ở kết quả tổng cuối cùng
-  const statsDisbursedAmount = Math.round(statsDisbursedAmountRaw);
+  // Làm tròn tới 2 chữ số thập phân ở kết quả tổng cuối cùng
+  const statsDisbursedAmount = roundTo2(statsDisbursedAmountRaw);
 
   const statsPendingTrans = filteredTransactions.filter(t => t.status !== TransactionStatus.DISBURSED);
   const statsPendingCount = statsPendingTrans.length;
@@ -159,8 +159,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
     const transactionTotal = t.compensation.totalApproved + interest + supplementary;
     return acc + transactionTotal;
   }, 0);
-  // Chỉ làm tròn ở kết quả tổng cuối cùng
-  const statsPendingAmount = Math.round(statsPendingAmountRaw);
+  // Làm tròn tới 2 chữ số thập phân ở kết quả tổng cuối cùng
+  const statsPendingAmount = roundTo2(statsPendingAmountRaw);
 
   // Tổng lãi phát sinh - Link với tab Giao dịch / tab Số dư
   // CHỈ tính lãi từ các giao dịch CHƯA giải ngân (PENDING + HOLD) - Lãi tạm tính
@@ -220,10 +220,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
   }
 
   // Làm tròn kết quả tổng cho hiển thị (giữ nội bộ 2 chữ số thập phân)
-  const statsTotalInterestRounded = Math.round(statsTotalInterest);
-  const statsLockedInterestRounded = Math.round(statsLockedInterest);
-  const interestBeforeTotalRounded = Math.round(interestBeforeTotal);
-  const interestAfterTotalRounded = Math.round(interestAfterTotal);
+  const statsTotalInterestRounded = roundTo2(statsTotalInterest);
+  const statsLockedInterestRounded = roundTo2(statsLockedInterest);
+  const interestBeforeTotalRounded = roundTo2(interestBeforeTotal);
+  const interestAfterTotalRounded = roundTo2(interestAfterTotal);
 
   // Tổng giá trị dự án = statsDisbursedAmount + statsPendingAmount
   // Using the same calculation as above for consistency
@@ -277,8 +277,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
         return acc;
       }, 0);
 
-      // Làm tròn tổng lãi theo dự án ở bước cuối
-      const pInterest = Math.round(pInterestRaw);
+      // Làm tròn tổng lãi theo dự án ở bước cuối (2 chữ số thập phân)
+      const pInterest = roundTo2(pInterestRaw);
 
       const completionRate = project.totalBudget > 0 ? (pDisbursed / project.totalBudget) * 100 : 0;
 

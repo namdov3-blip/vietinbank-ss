@@ -1,7 +1,7 @@
 import React from 'react';
 import { Transaction, Project, TransactionStatus, User } from '../types';
 import { GlassCard } from '../components/GlassCard';
-import { formatCurrency, calculateInterest, parseNumberFromComma, formatNumberWithComma, formatDateDisplay } from '../utils/helpers';
+import { formatCurrency, calculateInterest, parseNumberFromComma, formatNumberWithComma, formatDateDisplay, roundTo2 } from '../utils/helpers';
 import { Calendar, Calculator, RefreshCw } from 'lucide-react';
 
 interface InterestCalculatorProps {
@@ -75,9 +75,9 @@ export const InterestCalculator: React.FC<InterestCalculatorProps> = ({
   }, [startDate, endDate]);
 
   const interest = calculateInterest(principal, rate, startDate, endDate);
-  // Kết quả lãi dự kiến được tính chi tiết đến 2 chữ số thập phân,
-  // nhưng khi hiển thị tổng gốc + lãi thì làm tròn tới đơn vị gần nhất
-  const roundedTotal = Math.round(principal + interest);
+  // Chuẩn hóa kết quả: giữ 2 chữ số thập phân cho cả lãi và tổng gốc+lãi
+  const interestRounded = roundTo2(interest);
+  const roundedTotal = roundTo2(principal + interest);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -172,7 +172,7 @@ export const InterestCalculator: React.FC<InterestCalculatorProps> = ({
 
         <GlassCard className="p-4 border-slate-200 shadow-sm">
           <p className="text-xs uppercase font-bold text-slate-500 mb-1">Lãi dự kiến</p>
-          <p className="text-xl font-bold text-emerald-700">{formatCurrency(Math.round(interest))}</p>
+          <p className="text-xl font-bold text-emerald-700">{formatCurrency(interestRounded)}</p>
           <p className="text-[11px] text-slate-500 mt-1">Từ {formatDateDisplay(fromDate)} đến {formatDateDisplay(toDate)}</p>
         </GlassCard>
 
