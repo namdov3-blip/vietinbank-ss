@@ -2,6 +2,7 @@
 import { Transaction, Project, TransactionStatus, AuditLogItem } from '../types';
 // Import date-fns-tz functions (v3 uses toZonedTime and fromZonedTime)
 import { toZonedTime, fromZonedTime, format as formatTz } from 'date-fns-tz';
+import * as XLSX from 'xlsx';
 
 // Timezone constant for Vietnam
 export const VN_TIMEZONE = 'Asia/Ho_Chi_Minh';
@@ -478,6 +479,26 @@ const downloadCSV = (content: string, fileName: string) => {
   document.body.removeChild(link);
 };
 
+const downloadExcel = (data: any[][], fileName: string) => {
+  // Create workbook and worksheet
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  
+  // Set column widths (optional, for better formatting)
+  const maxCols = Math.max(...data.map(row => row.length));
+  const colWidths = [];
+  for (let i = 0; i < maxCols; i++) {
+    colWidths.push({ wch: 15 }); // Default width
+  }
+  ws['!cols'] = colWidths;
+  
+  // Add worksheet to workbook
+  XLSX.utils.book_append_sheet(wb, ws, 'Báo cáo');
+  
+  // Write file
+  XLSX.writeFile(wb, fileName);
+};
+
 export const exportTransactionsToExcel = (
   transactions: Transaction[], 
   projects: Project[], 
@@ -668,7 +689,7 @@ export const exportTransactionsToExcel = (
       project ? project.code : t.projectId,
       project ? project.name : '',
       t.household.name,
-      `'${t.household.cccd}`, // Add ' to force string in Excel
+      t.household.cccd, // xlsx library handles strings correctly
       t.household.address,
       t.household.decisionNumber,
       formatDate(t.household.decisionDate),
@@ -681,11 +702,10 @@ export const exportTransactionsToExcel = (
     ]);
   });
 
-  // Convert arrays to CSV string
-  const csvContent = rows.map(e => e.join(",")).join("\n");
-  const fileName = `Bao_cao_giao_dich_${formatTz(getVNNow(), 'yyyy-MM-dd', { timeZone: VN_TIMEZONE })}.csv`;
+  // Convert to Excel format
+  const fileName = `Bao_cao_giao_dich_${formatTz(getVNNow(), 'yyyy-MM-dd', { timeZone: VN_TIMEZONE })}.xlsx`;
 
-  downloadCSV(csvContent, fileName);
+  downloadExcel(rows, fileName);
 };
 
 export const exportAuditLogsToExcel = (auditLogs: AuditLogItem[]) => {
@@ -703,12 +723,11 @@ export const exportAuditLogsToExcel = (auditLogs: AuditLogItem[]) => {
       log.role,
       log.action,
       log.target,
-      `"${log.details.replace(/"/g, '""')}"` // Escape quotes for CSV
+      log.details // No need to escape for Excel
     ]);
   });
 
-  const csvContent = rows.map(e => e.join(",")).join("\n");
-  const fileName = `Audit_Log_${formatTz(getVNNow(), 'yyyy-MM-dd', { timeZone: VN_TIMEZONE })}.csv`;
+  const fileName = `Audit_Log_${formatTz(getVNNow(), 'yyyy-MM-dd', { timeZone: VN_TIMEZONE })}.xlsx`;
 
-  downloadCSV(csvContent, fileName);
+  downloadExcel(rows, fileName);
 };

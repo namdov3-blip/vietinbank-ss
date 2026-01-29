@@ -1,8 +1,8 @@
 import React, { useRef, useState, useMemo } from 'react';
 import api from '../services/api';
 import { GlassCard } from '../components/GlassCard';
-import { formatDate, formatCurrency, calculateInterest, calculateInterestWithRateChange } from '../utils/helpers';
-import { Plus, FolderKanban, Coins, Loader2, X, Check, FileSpreadsheet, Edit2, Eye, Calendar, Save, Tag, Type, Trash2, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { formatDate, formatCurrency, calculateInterest, calculateInterestWithRateChange, exportProjectsToExcel } from '../utils/helpers';
+import { Plus, FolderKanban, Coins, Loader2, X, Check, FileSpreadsheet, Edit2, Eye, Calendar, Save, Tag, Type, Trash2, Search, ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import { Project, Transaction, TransactionStatus } from '../types';
 
 interface ProjectsProps {
@@ -401,6 +401,13 @@ export const Projects: React.FC<ProjectsProps> = ({
                 }}
               />
             </div>
+            <button
+              onClick={() => exportProjectsToExcel(filteredProjects, transactions, interestRate, interestRateChangeDate, interestRateBefore, interestRateAfter)}
+              className="p-2 bg-white/60 hover:bg-white border border-slate-200 rounded-lg text-slate-600 transition-all shadow-sm group"
+              title="Tải xuống Excel"
+            >
+              <Download size={18} className="group-hover:text-blue-600" />
+            </button>
             {searchTerm && (
               <button
                 onClick={() => {
