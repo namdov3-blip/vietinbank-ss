@@ -816,6 +816,9 @@ export const TransactionList: React.FC<TransactionListProps> = ({
           transaction={printTransaction}
           project={projects.find(p => p.id === printTransaction.projectId)}
           interestRate={interestRate}
+          interestRateChangeDate={interestRateChangeDate}
+          interestRateBefore={interestRateBefore}
+          interestRateAfter={interestRateAfter}
           currentUser={currentUser}
           onClose={() => setPrintTransaction(null)}
         />
@@ -827,6 +830,9 @@ export const TransactionList: React.FC<TransactionListProps> = ({
           transactions={transactions.filter(t => selectedTransactions.has(t.id))}
           projects={projects}
           interestRate={interestRate}
+          interestRateChangeDate={interestRateChangeDate}
+          interestRateBefore={interestRateBefore}
+          interestRateAfter={interestRateAfter}
           currentUser={currentUser}
           onClose={() => {
             setShowBatchPrint(false);

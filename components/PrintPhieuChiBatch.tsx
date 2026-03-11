@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Transaction, Project, User } from '../types';
-import { formatCurrency, formatDateForPrint, formatCurrencyToWords, calculateInterest, formatDate } from '../utils/helpers';
+import { formatCurrency, formatDateForPrint, formatCurrencyToWords, calculateInterest, calculateInterestWithRateChange, formatDate, getVNNow, getVNStartOfDay } from '../utils/helpers';
 import { Printer, Loader2, X } from 'lucide-react';
 import { api } from '../services/api';
 
@@ -9,6 +9,9 @@ interface PrintPhieuChiBatchProps {
     transactions: Transaction[];
     projects: Project[];
     interestRate: number;
+    interestRateChangeDate?: string | null;
+    interestRateBefore?: number | null;
+    interestRateAfter?: number | null;
     currentUser: User;
     onClose: () => void;
 }
@@ -17,6 +20,9 @@ export const PrintPhieuChiBatch: React.FC<PrintPhieuChiBatchProps> = ({
     transactions,
     projects,
     interestRate,
+    interestRateChangeDate,
+    interestRateBefore,
+    interestRateAfter,
     currentUser,
     onClose
 }) => {
@@ -24,7 +30,6 @@ export const PrintPhieuChiBatch: React.FC<PrintPhieuChiBatchProps> = ({
     const [isGenerating, setIsGenerating] = useState(true);
 
     useEffect(() => {
-        // Fetch QR codes for all transactions
         const fetchAllQRs = async () => {
             setIsGenerating(true);
             const qrMap: Record<string, string> = {};
@@ -56,7 +61,6 @@ export const PrintPhieuChiBatch: React.FC<PrintPhieuChiBatchProps> = ({
         window.print();
     };
 
-    // Get organization info based on user
     const getOrgHeader = () => {
         const org = currentUser.organization || 'Đông Anh';
         const headers: Record<string, { name: string; address: string }> = {
@@ -72,23 +76,73 @@ export const PrintPhieuChiBatch: React.FC<PrintPhieuChiBatchProps> = ({
     const orgInfo = getOrgHeader();
 
     const PhieuChiTemplate = ({ transaction, project }: { transaction: Transaction; project: Project | undefined }) => {
+        // --- Logic đồng nhất với PrintPhieuChi.tsx ---
+        const principalBase = (transaction as any).principalForInterest ?? transaction.compensation.totalApproved;
         const baseDate = transaction.effectiveInterestDate || project?.interestStartDate;
-        const effectiveDisbursementDateISO =
-            transaction.disbursementDate ||
-            (baseDate ? new Date(baseDate).toISOString() : new Date().toISOString());
-        const interestEndDate = effectiveDisbursementDateISO ? new Date(effectiveDisbursementDateISO) : new Date();
-        const interest = calculateInterest(transaction.compensation.totalApproved || 0, interestRate, baseDate, interestEndDate);
-        const supplementary = transaction.supplementaryAmount || 0;
-        // Ensure totalAmount is always a valid number
-        const totalAmount = Math.max(0, (transaction.compensation.totalApproved || 0) + (interest || 0) + (supplementary || 0));
 
+        const interestEndDate = transaction.disbursementDate
+            ? getVNStartOfDay(transaction.disbursementDate)
+            : getVNStartOfDay(getVNNow());
+
+        let interest = 0;
+        let interestBefore = 0;
+        let interestAfter = 0;
+        let hasRateChange = false;
+
+        if (interestRateChangeDate && interestRateBefore !== null && interestRateAfter !== null) {
+            const interestResult = calculateInterestWithRateChange(
+                principalBase,
+                baseDate,
+                interestEndDate,
+                interestRateChangeDate,
+                interestRateBefore,
+                interestRateAfter
+            );
+            interest = interestResult.totalInterest;
+            interestBefore = interestResult.interestBefore;
+            interestAfter = interestResult.interestAfter;
+            hasRateChange = true;
+        } else {
+            interest = calculateInterest(principalBase, interestRate, baseDate, interestEndDate);
+        }
+
+        const supplementaryFromHistory = transaction.history?.reduce((sum: number, h: any) => {
+            if (h.action === 'Bổ sung tiền vào gốc' && h.totalAmount) {
+                return sum + (h.totalAmount || 0);
+            }
+            return sum;
+        }, 0) || 0;
+
+        const originalTotalApproved = (transaction.compensation.totalApproved || 0) - supplementaryFromHistory;
+
+        const supplementary = supplementaryFromHistory > 0
+            ? supplementaryFromHistory
+            : (transaction.supplementaryAmount || 0);
+
+        const totalAmount = Math.max(0, (principalBase || 0) + (interest || 0));
+
+        const remainingAfterWithdraw = (transaction as any).remainingAfterWithdraw;
+        const withdrawnAmount = (transaction as any).withdrawnAmount;
+
+        const withdrawHistoryEntry = transaction.history?.find((h: any) =>
+            h.action === 'Rút tiền một phần' || h.action === 'Rút tiền - Giải ngân hoàn toàn'
+        );
+        const withdrawDateStr = withdrawHistoryEntry?.timestamp
+            ? formatDateForPrint(withdrawHistoryEntry.timestamp)
+            : null;
+
+        const originalApprovedFormatted = formatCurrency(originalTotalApproved);
         const approvedFormatted = formatCurrency(transaction.compensation.totalApproved || 0);
         const interestFormatted = formatCurrency(interest || 0);
+        const interestBeforeFormatted = formatCurrency(interestBefore || 0);
+        const interestAfterFormatted = formatCurrency(interestAfter || 0);
         const supplementaryFormatted = formatCurrency(supplementary || 0);
         const totalFormatted = formatCurrency(totalAmount);
-        // Ensure amountWords is always a valid string
         const amountWords = formatCurrencyToWords(totalAmount) || 'Không đồng';
-        const printDate = effectiveDisbursementDateISO || new Date().toISOString();
+
+        const effectiveDisbursementDateISO = transaction.disbursementDate || '';
+        const printDate = effectiveDisbursementDateISO ||
+            (baseDate ? new Date(baseDate).toISOString() : getVNNow().toISOString());
         const qrDataUrl = qrDataUrls[transaction.id] || '';
 
         return (
@@ -115,17 +169,48 @@ export const PrintPhieuChiBatch: React.FC<PrintPhieuChiBatchProps> = ({
                     <div className="border-2 border-black border-l-0 p-4 min-w-[220px]">
                         <div className="space-y-1 mt-2">
                             <div className="flex justify-between text-xs">
-                                <span>- Tiền phê duyệt:</span>
-                                <span className="font-bold">{approvedFormatted}</span>
+                                <span>- Tiền phê duyệt ban đầu:</span>
+                                <span className="font-bold">{originalApprovedFormatted}</span>
                             </div>
-                            <div className="flex justify-between text-xs">
-                                <span>- Lãi:</span>
-                                <span className="font-bold">{interestFormatted}</span>
-                            </div>
-                            <div className="flex justify-between text-xs">
-                                <span>- Tiền bổ sung:</span>
-                                <span className="font-bold">{supplementaryFormatted}</span>
-                            </div>
+                            {supplementary > 0 && (
+                                <div className="flex justify-between text-xs">
+                                    <span>- Tiền bổ sung vào gốc:</span>
+                                    <span className="font-bold text-blue-600">+{supplementaryFormatted}</span>
+                                </div>
+                            )}
+                            {supplementary > 0 && (
+                                <div className="flex justify-between text-xs border-b border-slate-300 pb-1 mb-1">
+                                    <span className="font-semibold">= Tổng phê duyệt:</span>
+                                    <span className="font-bold">{approvedFormatted}</span>
+                                </div>
+                            )}
+                            {hasRateChange ? (
+                                <>
+                                    <div className="flex justify-between text-xs">
+                                        <span>- Lãi (trước {interestRateChangeDate ? formatDate(interestRateChangeDate) : '01/01/2026'}):</span>
+                                        <span className="font-bold">{interestBeforeFormatted}</span>
+                                    </div>
+                                    <div className="flex justify-between text-xs">
+                                        <span>- Lãi (từ {interestRateChangeDate ? formatDate(interestRateChangeDate) : '01/01/2026'}):</span>
+                                        <span className="font-bold">{interestAfterFormatted}</span>
+                                    </div>
+                                    <div className="flex justify-between text-xs border-t border-slate-300 pt-1">
+                                        <span>- Tổng lãi:</span>
+                                        <span className="font-bold">{interestFormatted}</span>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="flex justify-between text-xs">
+                                    <span>- Lãi:</span>
+                                    <span className="font-bold">{interestFormatted}</span>
+                                </div>
+                            )}
+                            {withdrawnAmount && withdrawnAmount > 0 && (
+                                <div className="flex justify-between text-xs">
+                                    <span>- Số tiền đã rút:</span>
+                                    <span className="font-bold text-red-600">- {formatCurrency(withdrawnAmount)}</span>
+                                </div>
+                            )}
                             <div className="flex justify-between text-sm border-t border-black pt-1 mt-1">
                                 <span className="font-bold">TỔNG CỘNG:</span>
                                 <span className="font-bold text-red-600">{totalFormatted}</span>
@@ -138,9 +223,6 @@ export const PrintPhieuChiBatch: React.FC<PrintPhieuChiBatchProps> = ({
                 <div className="mb-4 space-y-2">
                     <p className="text-sm">
                         Họ và tên người nhận tiền: <span className="font-bold">{transaction.household.name}</span>
-                        <span className="ml-4">
-                            Ngày GN: <span className="font-bold">{formatDateForPrint(printDate)}</span>
-                        </span>
                     </p>
                     <p className="text-sm">
                         Địa chỉ: <span className="border-b border-dotted border-black inline-block min-w-[400px]">
@@ -173,9 +255,30 @@ export const PrintPhieuChiBatch: React.FC<PrintPhieuChiBatchProps> = ({
                 {/* Confirmation Section */}
                 <div className="mb-6 border-t border-black pt-4">
                     <p className="font-bold mb-2">Đã nhận đủ số tiền</p>
-                    <p className="text-sm mb-1">- Bằng số: <span className="font-bold">{totalFormatted}</span> đồng</p>
+                    <p className="text-sm mb-1">- Bằng số: <span className="font-bold">{totalFormatted}</span></p>
                     <p className="text-sm">- Bằng chữ: <span className="capitalize">{amountWords.toLowerCase()}</span></p>
                 </div>
+
+                {/* Thông tin rút tiền (nếu có) */}
+                {remainingAfterWithdraw !== undefined && remainingAfterWithdraw > 0 && (
+                    <div className="mb-4 border-t border-slate-300 pt-4">
+                        <p className="text-sm font-bold mb-1">Thông tin rút tiền:</p>
+                        <p className="text-sm">
+                            - Số tiền đã rút: <span className="font-bold">{formatCurrency(withdrawnAmount || 0)}</span>
+                        </p>
+                        <p className="text-sm">
+                            - Tiền còn lại sau khi rút: <span className="font-bold text-red-600">{formatCurrency(remainingAfterWithdraw)}</span>
+                        </p>
+                        {withdrawDateStr && (
+                            <p className="text-sm mt-1">
+                                - Ngày rút tiền một phần: <span className="font-bold">{withdrawDateStr}</span>
+                            </p>
+                        )}
+                        <p className="text-xs italic text-slate-600 mt-1">
+                            (Lãi kép sẽ tiếp tục tính trên số tiền còn lại)
+                        </p>
+                    </div>
+                )}
 
                 {/* Signatures with QR */}
                 <div className="flex border-t-2 border-black pt-4">
