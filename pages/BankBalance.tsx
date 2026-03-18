@@ -49,10 +49,9 @@ export const BankBalance: React.FC<BankBalanceProps> = ({
   const [txType, setTxType] = useState<BankTransactionType>(BankTransactionType.DEPOSIT);
   const [txAmount, setTxAmount] = useState('');
   const [txNote, setTxNote] = useState('');
-  const [txDate, setTxDate] = useState(new Date().toISOString().split('T')[0]);
 
   // --- TÍNH TỔNG GỐC, LÃI TẠM TÍNH & TIỀN BỔ SUNG ---
-  // Tính từ các giao dịch CHƯA giải ngân (PENDING + HOLD) để khớp với "Tiền chưa GN"
+  // Tính từ các giao dịch CHƯA giải ngân (PENDING + HOLD) để khớp với "Tiền chưa giải ngân"
   // Khi giải ngân, các giá trị này sẽ tự động giảm đi
   const pendingData = useMemo(() => {
     if (transactions.length === 0) return { principal: 0, interest: 0, supplementary: 0, locked: 0 };
@@ -74,7 +73,7 @@ export const BankBalance: React.FC<BankBalanceProps> = ({
       if (t.status === TransactionStatus.DISBURSED && t.disbursementDate) {
         // Lãi đã chốt:
         // - Nếu disbursedTotal khớp (không bị làm tròn mất phần lẻ): tách lãi từ disbursedTotal để đúng theo số đã chốt
-        // - Nếu disbursedTotal có sai lệch (thường do dữ liệu cũ làm tròn): fallback sang lãi tính lại theo ngày GN
+        // - Nếu disbursedTotal có sai lệch (thường do dữ liệu cũ làm tròn): fallback sang lãi tính lại theo ngày giải ngân
         const supplementary = t.supplementaryAmount || 0;
         const storedTotal = Number((t as any).disbursedTotal);
 
@@ -151,7 +150,8 @@ export const BankBalance: React.FC<BankBalanceProps> = ({
       details: `${txType === BankTransactionType.DEPOSIT ? 'Nạp' : 'Rút'} ${formatCurrency(Math.abs(finalAmount))}${txNote ? ` - ${txNote}` : ''}`
     }]);
 
-    onAddBankTransaction(txType, finalAmount, txNote, txDate);
+    // Save full timestamp so audit shows real time (not 00:00:00)
+    onAddBankTransaction(txType, finalAmount, txNote, now.toISOString());
     setIsTxModalOpen(false);
     setTxAmount(''); setTxNote('');
   };
@@ -188,7 +188,7 @@ export const BankBalance: React.FC<BankBalanceProps> = ({
           <p className="text-2xl font-bold text-slate-900 tracking-tight">
             {formatCurrency(roundTo2(pendingData.principal + pendingData.interest + pendingData.supplementary))}
           </p>
-          <p className="text-[10px] font-medium text-blue-600 mt-2">Bằng tiền chưa GN (gốc + lãi + bổ sung của các giao dịch chưa giải ngân)</p>
+          <p className="text-[10px] font-medium text-blue-600 mt-2">Bằng tiền chưa giải ngân của các giao dịch chưa giải ngân</p>
         </GlassCard>
 
 

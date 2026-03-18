@@ -38,7 +38,7 @@ export const Admin: React.FC<AdminProps> = ({
   setAuditLogs,
   setInterestHistory
 }) => {
-  const [activeSubTab, setActiveSubTab] = useState<'audit' | 'users' | 'interest'>('audit');
+  const [activeSubTab, setActiveSubTab] = useState<'audit' | 'users' | 'approvals' | 'interest'>('audit');
 
   // State for adding new user
   const [newUser, setNewUser] = useState<Partial<User>>({
@@ -89,6 +89,8 @@ export const Admin: React.FC<AdminProps> = ({
     { id: 'admin', label: 'Admin' },
   ];
 
+  const pendingUsers = users.filter((u) => u.status === 'Pending');
+
   const handleCreateUser = () => {
     if (!newUser.name) return alert("Vui lòng nhập tên user");
     if (!newUser.password) return alert("Vui lòng nhập mật khẩu");
@@ -118,6 +120,26 @@ export const Admin: React.FC<AdminProps> = ({
     }]);
 
     setNewUser({ name: '', role: 'User2', permissions: ['dashboard', 'projects', 'transactions', 'interestCalc'], password: '', organization: undefined });
+  };
+
+  const handleApprovePendingUser = async (user: User) => {
+    // Chỉ tài khoản Admin mới được phê duyệt
+    if (currentUser.role !== 'Admin') {
+      alert('Bạn không có quyền phê duyệt tài khoản.');
+      return;
+    }
+
+    if (!user.id) {
+      alert('Không tìm thấy ID người dùng.');
+      return;
+    }
+
+    try {
+      await onUpdateUser({ ...user, status: 'Active' } as User);
+      alert(`Đã phê duyệt tài khoản "${user.name}" thành công.`);
+    } catch (err: any) {
+      alert('Phê duyệt thất bại: ' + (err.message || 'Unknown error'));
+    }
   };
 
   const togglePermission = (permId: string, isEditing = false) => {
@@ -299,6 +321,12 @@ export const Admin: React.FC<AdminProps> = ({
           className={`px-4 py-2 text-sm font-bold rounded-t-lg transition-colors ${activeSubTab === 'users' ? 'bg-white text-blue-700 border-x border-t border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
         >
           <div className="flex items-center gap-2"><UserPlus size={16} /> Quản lý User</div>
+        </button>
+        <button
+          onClick={() => setActiveSubTab('approvals')}
+          className={`px-4 py-2 text-sm font-bold rounded-t-lg transition-colors ${activeSubTab === 'approvals' ? 'bg-white text-blue-700 border-x border-t border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
+        >
+          <div className="flex items-center gap-2"><CheckSquare size={16} /> Phê duyệt đăng ký</div>
         </button>
         <button
           onClick={() => setActiveSubTab('interest')}
@@ -647,6 +675,91 @@ export const Admin: React.FC<AdminProps> = ({
               </button>
             </div>
           </GlassCard>
+        </div>
+      )}
+
+      {/* --- APPROVALS TAB --- */}
+      {activeSubTab === 'approvals' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-4">
+            <GlassCard className="p-0 overflow-hidden border-slate-300 shadow-sm">
+              <div className="max-h-[600px] overflow-y-auto custom-scrollbar">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-slate-100 text-[10px] text-slate-600 uppercase font-bold sticky top-0 z-10">
+                    <tr>
+                      <th className="px-6 py-3 border-b border-slate-200">Tài khoản chờ duyệt</th>
+                      <th className="px-6 py-3 border-b border-slate-200">Vai trò</th>
+                      <th className="px-6 py-3 border-b border-slate-200">Organization</th>
+                      <th className="px-6 py-3 border-b border-slate-200 text-center">Phê duyệt</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {pendingUsers.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="px-6 py-10 text-center text-xs text-slate-400 italic">
+                          Không có tài khoản nào đang chờ duyệt.
+                        </td>
+                      </tr>
+                    ) : (
+                      pendingUsers.map((user) => (
+                        <tr key={user.id} className="hover:bg-blue-50/50 transition-colors group">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex items-center gap-3">
+                              <img
+                                src={user.avatar}
+                                alt={user.name}
+                                className="w-10 h-10 rounded-full border border-slate-200 shadow-sm"
+                              />
+                              <span className="text-sm font-bold text-slate-900 group-hover:text-blue-700 transition-colors">
+                                {user.name}
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-slate-500 mt-1">Trạng thái: Chờ duyệt</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-2 py-1 rounded">
+                              {user.role}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            {user.organization ? (
+                              <span className="text-[11px] font-bold uppercase tracking-tight text-blue-700 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-100 inline-flex items-center gap-1">
+                                <Building2 size={12} className="opacity-70" />
+                                {user.organization}
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-slate-400 italic">N/A</span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-center">
+                            <button
+                              onClick={() => handleApprovePendingUser(user)}
+                              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold bg-[#005992] text-white rounded-lg hover:bg-[#004a7a] transition-all shadow-sm"
+                              title="Phê duyệt tài khoản"
+                            >
+                              <CheckSquare size={14} /> Phê duyệt
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </GlassCard>
+          </div>
+
+          <div className="space-y-4">
+            <GlassCard className="p-5 border-slate-300 shadow-sm">
+              <h3 className="text-sm font-bold text-[#0f172a] mb-2">Nguyên tắc phê duyệt</h3>
+              <p className="text-xs font-medium text-slate-600 leading-relaxed">
+                Tài khoản đăng ký mới sẽ ở trạng thái <span className="font-bold">Chờ duyệt</span> cho đến khi được Admin phê duyệt.
+              </p>
+              <p className="text-xs font-medium text-slate-600 leading-relaxed mt-3">
+                Chỉ các tài khoản thuộc nhóm <span className="font-bold">Admin</span> (trong hệ thống) mới được phép phê duyệt.
+              </p>
+            </GlassCard>
+          </div>
         </div>
       )}
 

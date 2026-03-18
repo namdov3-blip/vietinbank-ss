@@ -7,6 +7,7 @@ export interface IUser extends Document {
     name: string;
     password: string;
     role: 'SuperAdmin' | 'Admin' | 'User1' | 'User2' | 'PMB';
+    status: 'Active' | 'Pending';
     avatar: string;
     permissions: string[];
     organization: OrganizationType;
@@ -20,6 +21,11 @@ const UserSchema = new Schema<IUser>({
         type: String,
         enum: ['SuperAdmin', 'Admin', 'User1', 'User2', 'PMB'],
         default: 'User2'
+    },
+    status: {
+        type: String,
+        enum: ['Active', 'Pending'],
+        default: 'Active'
     },
     avatar: { type: String, default: '' },
     permissions: {

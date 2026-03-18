@@ -108,7 +108,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const isDisbursed = localStatus === TransactionStatus.DISBURSED;
   const isHold = localStatus === TransactionStatus.HOLD;
 
-  // Khi đang chỉnh "Chi tiết hồ sơ", sử dụng bản editedTransaction để tính toán realtime (bao gồm ngày GN mới)
+  // Khi đang chỉnh "Chi tiết hồ sơ", sử dụng bản editedTransaction để tính toán realtime (bao gồm ngày giải ngân mới)
   const effectiveTx = isEditingDetails && editedTransaction ? editedTransaction : transaction;
 
   // Tính lãi
@@ -188,8 +188,8 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   }
 
   // Với hồ sơ đã giải ngân:
-  // - Nếu KHÔNG chỉnh sửa ngày GN, ưu tiên tổng tiền đã lưu (disbursedTotal) để khớp số liệu cũ.
-  // - Nếu đang chỉnh ngày GN (editedTransaction khác với transaction), dùng lại calculatedTotal để thấy lãi/tổng tiền realtime.
+  // - Nếu KHÔNG chỉnh sửa ngày giải ngân, ưu tiên tổng tiền đã lưu (disbursedTotal) để khớp số liệu cũ.
+  // - Nếu đang chỉnh ngày giải ngân (editedTransaction khác với transaction), dùng lại calculatedTotal để thấy lãi/tổng tiền realtime.
   const calculatedTotal = principalBase + interest + supplementary;
   const hasEditedDisbursementDate =
     isEditingDetails &&

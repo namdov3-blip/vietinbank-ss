@@ -2,7 +2,6 @@
 import React, { useState, useMemo } from 'react';
 import { Transaction, Project, TransactionStatus, User } from '../types';
 import { GlassCard } from '../components/GlassCard';
-import { StatusBadge } from '../components/StatusBadge';
 import { PrintPhieuChi } from '../components/PrintPhieuChi';
 import { PrintPhieuChiBatch } from '../components/PrintPhieuChiBatch';
 import { formatCurrency, formatDate, calculateInterest, calculateInterestWithRateChange, exportTransactionsToExcel, roundTo2 } from '../utils/helpers';
@@ -380,7 +379,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
   const StatBox = ({ label, value, subValue, icon: Icon, colorClass }: any) => (
     <GlassCard className="p-4 flex flex-col justify-between border-slate-200 min-h-[100px] shadow-sm">
       <div className="flex justify-between items-start mb-2">
-        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">{label}</span>
+        <span className="text-[10px] font-bold text-[#0f172a] uppercase tracking-wide">{label}</span>
         <Icon size={16} className={colorClass} strokeWidth={2.5} />
       </div>
       <div className="flex flex-col">
@@ -418,33 +417,33 @@ export const TransactionList: React.FC<TransactionListProps> = ({
           colorClass="text-blue-600"
         />
         <StatBox
-          label="Hộ đã GN"
+          label="Hộ đã giải ngân"
           value={stats.disbursedCount}
           subValue="Đã hoàn tất"
           icon={CheckCircle}
           colorClass="text-emerald-600"
         />
         <StatBox
-          label="Hộ chưa GN"
+          label="Hộ chưa giải ngân"
           value={stats.notDisbursedCount}
           subValue="Đang chờ"
           icon={Clock}
           colorClass="text-amber-600"
         />
         <StatBox
-          label="Tiền đã GN"
+          label="Tiền đã giải ngân"
           value={formatCurrency(stats.moneyDisbursed)}
           icon={DollarSign}
           colorClass="text-emerald-600"
         />
         <StatBox
-          label="Tiền chưa GN"
+          label="Tiền chưa giải ngân"
           value={formatCurrency(stats.moneyNotDisbursed)}
           icon={Users}
           colorClass="text-amber-600"
         />
         <StatBox
-          label="Tổng lãi PS"
+          label="Tổng lãi phát sinh"
           value={formatCurrency(stats.accruedInterest)}
           subValue={stats.lockedInterest > 0 ? `Đã chốt: ${formatCurrency(stats.lockedInterest)}` : "Lãi tạm tính"}
           icon={PiggyBank}
@@ -626,8 +625,8 @@ export const TransactionList: React.FC<TransactionListProps> = ({
       {/* Data Table */}
       <GlassCard className="overflow-hidden p-0 border-slate-300 shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left border-collapse">
-            <thead className="text-[10px] text-slate-700 uppercase font-bold bg-slate-100 border-b border-slate-200 backdrop-blur-sm sticky top-0 z-10">
+          <table className="w-full text-sm border-collapse text-center">
+            <thead className="text-[10px] font-bold text-black uppercase tracking-wide bg-slate-50 border-b border-slate-200 sticky top-0 z-10">
               <tr>
                 <th className="px-4 py-3.5 border-r border-slate-200 text-center w-12">
                   <input
@@ -650,21 +649,21 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                 <th className="px-4 py-3.5 border-r border-slate-200 text-center w-12">STT</th>
                 <th className="px-4 py-3.5 border-r border-slate-200 min-w-[100px]">Mã GD</th>
                 <th className="px-4 py-3.5 border-r border-slate-200 min-w-[120px]">Mã Hộ Dân</th>
-                <th className="px-4 py-3.5 border-r border-slate-200 min-w-[200px]">Mã Dự Án</th>
+                <th className="px-4 py-3.5 border-r border-slate-200 min-w-[140px]">Mã Dự Án</th>
                 <th className="px-4 py-3.5 border-r border-slate-200 min-w-[150px]">Họ và tên</th>
                 <th className="px-4 py-3.5 border-r border-slate-200 min-w-[180px]">Loại chi trả</th>
-                <th className="px-4 py-3.5 border-r border-slate-200 min-w-[120px]">Số quyết định</th>
-                <th className="px-4 py-3.5 border-r border-slate-200 min-w-[130px]">Ngày GN</th>
-                <th className="px-4 py-3.5 text-right border-r border-slate-200 min-w-[130px]">Tổng phê duyệt</th>
-                <th className="px-4 py-3.5 text-right border-r border-slate-200 min-w-[120px]">Lãi phát sinh</th>
-                <th className="px-4 py-3.5 text-right border-r border-slate-200 min-w-[120px]">Tiền bổ sung</th>
-                <th className="px-4 py-3.5 text-right border-r border-slate-200 min-w-[130px]">Tổng chi trả</th>
-                <th className="px-4 py-3.5 text-right border-r border-slate-200 min-w-[130px]">Tiền còn lại</th>
+                <th className="px-4 py-3.5 border-r border-slate-200 min-w-[105px]">Số quyết định</th>
+                <th className="px-4 py-3.5 border-r border-slate-200 min-w-[130px]">Ngày giải ngân</th>
+                <th className="px-4 py-3.5 text-center border-r border-slate-200 min-w-[130px]">Tổng phê duyệt</th>
+                <th className="px-4 py-3.5 text-center border-r border-slate-200 min-w-[120px]">Lãi phát sinh</th>
+                <th className="px-4 py-3.5 text-center border-r border-slate-200 min-w-[120px]">Tiền bổ sung</th>
+                <th className="px-4 py-3.5 text-center border-r border-slate-200 min-w-[130px]">Tổng chi trả</th>
+                <th className="px-4 py-3.5 text-center border-r border-slate-200 min-w-[130px]">Tiền còn lại</th>
                 <th className="px-4 py-3.5 border-r border-slate-200 text-center min-w-[120px]">Trạng thái</th>
                 <th className="px-4 py-3.5 text-center min-w-[80px]">Thao tác</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-300">
+            <tbody className="divide-y divide-slate-100">
               {paginatedData.map((t, index) => {
 
                 const project = resolveProject(t);
@@ -703,8 +702,8 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                 const totalAvailable = principalBase + currentInterest + supplementary;
                 
                 // Tổng chi trả:
-                // - Chưa GN: luôn dùng totalAvailable để SUM khớp stats "Tiền chưa GN"
-                // - Đã GN: ưu tiên disbursedTotal (đã chốt), nhưng nếu dữ liệu cũ bị làm tròn mất phần lẻ
+                // - Chưa giải ngân: luôn dùng totalAvailable để SUM khớp stats "Tiền chưa giải ngân"
+                // - Đã giải ngân: ưu tiên disbursedTotal (đã chốt), nhưng nếu dữ liệu cũ bị làm tròn mất phần lẻ
                 //   thì fallback sang totalAvailable (gốc + lãi + bổ sung) tính lại theo đúng ngày chốt.
                 const storedDisbursedTotal = Number((t as any).disbursedTotal);
                 const computedTotalPaid = roundTo2(totalAvailable);
@@ -723,8 +722,8 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                   : null;
 
                 // --- DISPLAY DATE LOGIC ---
-                // Nếu đã GN: Hiện ngày thực tế
-                // Nếu chưa GN: Hiện ngày dự kiến (effectiveInterestDate hoặc interestStartDate của dự án)
+                // Nếu đã giải ngân: Hiện ngày thực tế
+                // Nếu chưa giải ngân: Hiện ngày dự kiến (effectiveInterestDate hoặc interestStartDate của dự án)
                 const relevantDate = getRelevantDate(t, project);
                 let displayDateStr = relevantDate ? formatDate(relevantDate) : '-';
                 let dateNote = '';
@@ -744,7 +743,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                 return (
                   <tr
                     key={t.id}
-                    className="hover:bg-blue-50/50 transition-colors cursor-pointer group odd:bg-white even:bg-slate-50/30"
+                    className="border-b border-slate-100 hover:bg-slate-50 transition-colors cursor-pointer group"
                     onClick={() => onSelect(t)}
                   >
                     <td className="px-4 py-3 border-r border-slate-200 text-center" onClick={(e) => e.stopPropagation()}>
@@ -773,8 +772,8 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                     <td className="px-4 py-3 border-r border-slate-200 font-mono text-[11px] font-bold text-slate-500">
                       {t.household.id}
                     </td>
-                    <td className="px-4 py-3 border-r border-slate-200">
-                      <span className="text-xs font-bold bg-blue-50 px-2 py-1 rounded text-blue-700">
+                    <td className="px-4 py-3 border-r border-slate-200 max-w-[140px] truncate">
+                      <span className="text-xs font-bold bg-blue-50 px-2 py-1 rounded text-blue-700 truncate block">
                         {project ? project.code : (t.projectId as any).toString()}
                       </span>
                     </td>
@@ -786,8 +785,8 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                         {t.paymentType || '-'}
                       </span>
                     </td>
-                    <td className="px-4 py-3 border-r border-slate-200">
-                      <span className="text-xs font-bold text-slate-700">{t.household?.decisionNumber || '-'}</span>
+                    <td className="px-4 py-3 border-r border-slate-200 max-w-[105px] truncate">
+                      <span className="text-xs font-bold text-slate-700 truncate block">{t.household?.decisionNumber || '-'}</span>
                     </td>
                     <td className="px-4 py-3 border-r border-slate-200">
                       <div className="flex flex-col">
@@ -795,29 +794,29 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                         <span className="text-[10px] text-slate-400 italic font-medium">{dateNote}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-right font-bold text-slate-800 border-r border-slate-200">
+                    <td className="px-4 py-3 text-center font-bold text-slate-800 border-r border-slate-200">
                       {formatCurrency(principalBase)}
                       {(t as any).principalForInterest && (t as any).principalForInterest !== t.compensation.totalApproved && (
                         <span className="block text-[10px] font-medium text-slate-400">Gốc: {formatCurrency(t.compensation.totalApproved)}</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right font-bold text-rose-600 border-r border-slate-200">
+                    <td className="px-4 py-3 text-center font-bold text-rose-600 border-r border-slate-200">
                       {currentInterest > 0 ? `+${formatCurrency(currentInterest)}` : '-'}
                     </td>
-                    <td className="px-4 py-3 text-right font-bold border-r border-slate-200">
+                    <td className="px-4 py-3 text-center font-bold border-r border-slate-200">
                       {supplementary !== 0 ? (
                         <span className={supplementary > 0 ? 'text-emerald-600' : 'text-rose-600'}>
                           {supplementary > 0 ? '+' : ''}{formatCurrency(supplementary)}
                         </span>
                       ) : '-'}
                     </td>
-                    <td className="px-4 py-3 text-right font-bold text-blue-700 border-r border-slate-200 bg-blue-50/30">
+                    <td className="px-4 py-3 text-center font-bold text-blue-700 border-r border-slate-200 bg-blue-50/30">
                       <span className="block">{formatCurrency(displayTotalPaid)}</span>
                       {withdrawnAmount > 0 && !isDisbursed && (
                         <span className="block text-[10px] font-medium text-orange-600">Đã rút: {formatCurrency(withdrawnAmount)}</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right font-bold border-r border-slate-200">
+                    <td className="px-4 py-3 text-center font-bold border-r border-slate-200">
                       {remainingCol !== null ? (
                         <span className="text-amber-700 bg-amber-50 px-2 py-1 rounded">
                           {formatCurrency(remainingCol)}
@@ -828,7 +827,17 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                     </td>
                     <td className="px-4 py-3 border-r border-slate-200 text-center">
                       <div className="flex items-center justify-center">
-                        <StatusBadge status={effectiveStatus} />
+                        <span
+                          className={`text-xs font-medium px-2 py-0.5 rounded ${
+                            effectiveStatus === TransactionStatus.DISBURSED
+                              ? 'text-green-700 font-bold'
+                              : effectiveStatus === TransactionStatus.HOLD
+                                ? 'bg-blue-100 text-blue-700'
+                                : 'text-[#005992] font-bold'
+                          }`}
+                        >
+                          {effectiveStatus}
+                        </span>
                       </div>
                     </td>
                     <td className="px-4 py-3 text-center">
@@ -860,28 +869,33 @@ export const TransactionList: React.FC<TransactionListProps> = ({
         )}
 
         {/* Pagination Controls */}
-        <div className="p-4 bg-white/50 border-t border-slate-200 flex justify-between items-center backdrop-blur-sm">
-          <div className="text-xs font-bold text-slate-500">
-            Hiển thị {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, filtered.length)} trên tổng số {filtered.length} bản ghi
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => handlePageChange(currentPage - 1)}
-              disabled={currentPage === 1}
-              className="p-1.5 rounded-lg border border-slate-200 text-slate-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 transition-colors"
-            >
-              <ChevronLeft size={16} strokeWidth={2} />
-            </button>
-            <div className="flex items-center justify-center px-3 bg-white border border-slate-200 rounded-lg text-xs font-bold text-blue-700 shadow-sm">
-              Trang {currentPage} / {totalPages}
+        <div className="p-4 bg-white/50 border-t border-slate-200 backdrop-blur-sm">
+          <div className="grid grid-cols-3 items-center">
+            <div className="text-xs font-bold text-slate-500">
+              Hiển thị {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, filtered.length)} trên tổng số {filtered.length} bản ghi
             </div>
-            <button
-              onClick={() => handlePageChange(currentPage + 1)}
-              disabled={currentPage === totalPages}
-              className="p-1.5 rounded-lg border border-slate-200 text-slate-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 transition-colors"
-            >
-              <ChevronRight size={16} strokeWidth={2} />
-            </button>
+            <div className="flex justify-center">
+              <div className="flex gap-2 items-center justify-center">
+                <button
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  className="p-2 rounded-lg border border-slate-200 text-slate-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 transition-colors"
+                >
+                  <ChevronLeft size={17} strokeWidth={2} />
+                </button>
+                <div className="flex items-center justify-center px-4 bg-white border border-slate-200 rounded-lg text-sm font-bold text-blue-700 shadow-sm">
+                  Trang {currentPage} / {totalPages}
+                </div>
+                <button
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                  className="p-2 rounded-lg border border-slate-200 text-slate-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 transition-colors"
+                >
+                  <ChevronRight size={17} strokeWidth={2} />
+                </button>
+              </div>
+            </div>
+            <div />
           </div>
         </div>
       </GlassCard>

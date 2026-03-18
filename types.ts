@@ -111,6 +111,7 @@ export interface User {
   id: string;
   name: string;
   role: 'SuperAdmin' | 'Admin' | 'User1' | 'User2' | 'PMB';
+  status?: 'Active' | 'Pending';
   avatar: string;
   permissions: string[];
   password?: string;

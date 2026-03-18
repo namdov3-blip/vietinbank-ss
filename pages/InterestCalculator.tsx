@@ -176,8 +176,8 @@ export const InterestCalculator: React.FC<InterestCalculatorProps> = ({
           <p className="text-[11px] text-slate-500 mt-1">Từ {formatDateDisplay(fromDate)} đến {formatDateDisplay(toDate)}</p>
         </GlassCard>
 
-        <GlassCard className="p-4 border-slate-200 shadow-sm bg-blue-50/50">
-          <p className="text-xs uppercase font-bold text-blue-700 mb-1 flex items-center gap-1"><Calculator size={14} /> Tổng gốc + lãi</p>
+        <GlassCard className="p-4 border-slate-200 shadow-sm">
+          <p className="text-xs uppercase font-bold text-blue-700 mb-1 flex items-center gap-1"><Calculator size={14} /> Tổng</p>
           <p className="text-xl font-bold text-blue-900">{formatCurrency(roundedTotal)}</p>
         </GlassCard>
       </div>

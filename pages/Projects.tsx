@@ -1,8 +1,8 @@
-import React, { useRef, useState, useMemo } from 'react';
+import React, { useRef, useState, useMemo, useCallback } from 'react';
 import api from '../services/api';
 import { GlassCard } from '../components/GlassCard';
 import { formatDate, formatCurrency, calculateInterest, calculateInterestWithRateChange, exportProjectsToExcel, roundTo2 } from '../utils/helpers';
-import { Plus, FolderKanban, Coins, Loader2, X, Check, FileSpreadsheet, Edit2, Eye, Calendar, Save, Tag, Type, Trash2, Search, ChevronLeft, ChevronRight, Download } from 'lucide-react';
+import { Plus, FolderKanban, Coins, Loader2, X, Check, FileSpreadsheet, Edit2, Eye, Calendar, Save, Tag, Type, Trash2, Search, ChevronLeft, ChevronRight, Download, LayoutGrid, List } from 'lucide-react';
 import { Project, Transaction, TransactionStatus } from '../types';
 
 interface ProjectsProps {
@@ -33,6 +33,19 @@ const toInputDateLocal = (d?: string | Date) => {
   return new Date(date.getTime() - tzOffset).toISOString().slice(0, 10);
 };
 
+const STATUS_COLUMNS = [
+  { key: 'receiving', label: 'Tiếp nhận hồ sơ', dotClass: 'bg-slate-400', badgeBg: 'bg-slate-100', badgeText: 'text-slate-700', borderClass: 'border-t-slate-400' },
+  { key: 'disbursing', label: 'Đang giải ngân', dotClass: 'bg-[#005992]', badgeBg: 'bg-[#005992]/10', badgeText: 'text-[#005992]', borderClass: 'border-t-[#005992]' },
+  { key: 'completed', label: 'Đã tất toán', dotClass: 'bg-green-600', badgeBg: 'bg-green-50', badgeText: 'text-green-700', borderClass: 'border-t-green-600' },
+] as const;
+
+const getProgressColor = (percent: number): string => {
+  if (percent >= 100) return 'bg-green-500';
+  if (percent >= 70) return 'bg-rose-500';
+  if (percent >= 40) return 'bg-amber-500';
+  return 'bg-blue-500';
+};
+
 export const Projects: React.FC<ProjectsProps> = ({
   projects,
   transactions,
@@ -54,13 +67,13 @@ export const Projects: React.FC<ProjectsProps> = ({
   // State for Editing
   const [editingProject, setEditingProject] = useState<Project | null>(null);
 
-  // State for Search and Pagination
+  // State for Search, Pagination, View Mode
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
+  const [viewMode, setViewMode] = useState<'kanban' | 'list'>('kanban');
+  const itemsPerPage = viewMode === 'kanban' ? 10 : 12;
 
-  // Helper function to calculate interest with rate change if configured (match Dashboard)
-  const calculateInterestSmart = React.useCallback((
+  const calculateInterestSmart = useCallback((
     principal: number,
     baseDate: string | undefined,
     endDate: Date
@@ -80,20 +93,19 @@ export const Projects: React.FC<ProjectsProps> = ({
     return calculateInterest(principal, interestRate, baseDate, endDate);
   }, [interestRate, interestRateChangeDate, interestRateBefore, interestRateAfter]);
 
-  // Helper function to calculate actual total budget for a project
-  const getProjectActualTotal = React.useCallback((project: Project): number => {
+  const getProjectActualTotal = useCallback((project: Project): number => {
     const projectTrans = transactions.filter(t => {
       const pIdStr = (t.projectId && (t.projectId as any)._id) ? (t.projectId as any)._id.toString() : t.projectId?.toString();
       return pIdStr === project.id || pIdStr === (project as any)._id;
     });
-    
+
     const actualTotal = projectTrans.reduce((sum, t) => {
       const supplementary = t.supplementaryAmount || 0;
-      
+
       if (t.status === TransactionStatus.DISBURSED && (t as any).disbursedTotal) {
         return sum + (t as any).disbursedTotal;
       }
-      
+
       const baseDate = t.effectiveInterestDate || project.interestStartDate;
       let interest = 0;
       if (t.status === TransactionStatus.DISBURSED && t.disbursementDate) {
@@ -103,7 +115,7 @@ export const Projects: React.FC<ProjectsProps> = ({
       }
       return sum + t.compensation.totalApproved + interest + supplementary;
     }, 0);
-    
+
     return actualTotal > 0 ? actualTotal : project.totalBudget;
   }, [transactions, calculateInterestSmart]);
 
@@ -112,67 +124,126 @@ export const Projects: React.FC<ProjectsProps> = ({
     if (!searchTerm.trim()) return projects;
 
     const term = searchTerm.toLowerCase().trim();
-    
+
     return projects.filter(project => {
-      // Search by project code
       if (project.code?.toLowerCase().includes(term)) return true;
-      
-      // Search by interest start date (Ngày GN)
+      if (project.name?.toLowerCase().includes(term)) return true;
+
       if (project.interestStartDate) {
         const dateStr = formatDate(project.interestStartDate).toLowerCase();
         if (dateStr.includes(term)) return true;
       }
-      
-      // Search by total budget or actual total value
+
       const actualTotal = getProjectActualTotal(project);
       const budgetStr = formatCurrency(actualTotal).toLowerCase();
       const budgetNum = actualTotal.toString();
       if (budgetStr.includes(term) || budgetNum.includes(term)) return true;
-      
-      // Also search by initial budget
+
       const initialBudgetStr = formatCurrency(project.totalBudget).toLowerCase();
       const initialBudgetNum = project.totalBudget.toString();
       if (initialBudgetStr.includes(term) || initialBudgetNum.includes(term)) return true;
-      
+
       return false;
     });
   }, [projects, searchTerm, getProjectActualTotal]);
 
-  // Pagination Logic
-  const totalPages = Math.ceil(filteredProjects.length / itemsPerPage);
-  const paginatedProjects = filteredProjects.slice(
+  // Pre-compute stats for each project (shared by kanban + list views)
+  const projectsWithStats = useMemo(() => {
+    return filteredProjects.map(project => {
+      const projectTrans = transactions.filter(t => {
+        const pIdStr = (t.projectId && (t.projectId as any)._id) ? (t.projectId as any)._id.toString() : t.projectId?.toString();
+        return pIdStr === project.id || pIdStr === (project as any)._id;
+      });
+
+      const disbursedFull = projectTrans
+        .filter(t => t.status === TransactionStatus.DISBURSED)
+        .reduce((acc, t) => {
+          const supplementary = t.supplementaryAmount || 0;
+          const baseDate = t.effectiveInterestDate || project.interestStartDate || (project as any).startDate;
+          const interest = t.disbursementDate
+            ? calculateInterestSmart(t.compensation.totalApproved, baseDate, new Date(t.disbursementDate))
+            : 0;
+          const computedTotal = roundTo2(t.compensation.totalApproved + interest + supplementary);
+          const storedTotal = Number((t as any).disbursedTotal);
+          const totalToUse =
+            isFinite(storedTotal) && storedTotal > 0 && Math.abs(roundTo2(storedTotal) - computedTotal) < 0.01
+              ? roundTo2(storedTotal)
+              : computedTotal;
+          return acc + totalToUse;
+        }, 0);
+
+      const disbursedPartial = projectTrans
+        .filter(t => t.status !== TransactionStatus.DISBURSED && (t as any).withdrawnAmount)
+        .reduce((acc, t) => acc + ((t as any).withdrawnAmount || 0), 0);
+
+      const disbursed = disbursedFull + disbursedPartial;
+
+      const actualTotalBudget = projectTrans.reduce((sum, t) => {
+        const supplementary = t.supplementaryAmount || 0;
+        const baseDate = t.effectiveInterestDate || project.interestStartDate || (project as any).startDate;
+        const principalBase = (t as any).principalForInterest ?? t.compensation.totalApproved;
+        let interest = 0;
+        if (t.status === TransactionStatus.DISBURSED && t.disbursementDate) {
+          interest = calculateInterestSmart(t.compensation.totalApproved, baseDate, new Date(t.disbursementDate));
+        } else if (t.status !== TransactionStatus.DISBURSED) {
+          interest = calculateInterestSmart(principalBase, baseDate, new Date());
+        }
+        const computedTotal = roundTo2(principalBase + interest + supplementary);
+        if (t.status === TransactionStatus.DISBURSED) {
+          const storedTotal = Number((t as any).disbursedTotal);
+          if (isFinite(storedTotal) && storedTotal > 0 && Math.abs(roundTo2(storedTotal) - computedTotal) < 0.01) {
+            return sum + roundTo2(storedTotal);
+          }
+        }
+        return sum + computedTotal;
+      }, 0);
+
+      const percent = actualTotalBudget > 0 ? (disbursed / actualTotalBudget) * 100 : 0;
+
+      // Tính riêng giá trị gốc (principal + supplementary, không lãi) và lãi
+      const principalValue = projectTrans.reduce((sum, t) => {
+        const principalBase = (t as any).principalForInterest ?? t.compensation.totalApproved;
+        const supplementary = t.supplementaryAmount || 0;
+        return sum + principalBase + supplementary;
+      }, 0);
+      const totalInterest = roundTo2(actualTotalBudget - principalValue);
+
+      const disbursedCount = projectTrans.filter(t => t.status === TransactionStatus.DISBURSED).length;
+      let status: string;
+      if (disbursedCount === 0) status = 'receiving';
+      else if (disbursedCount === projectTrans.length) status = 'completed';
+      else status = 'disbursing';
+
+      return { project, actualTotalBudget, disbursed, percent, percentStr: percent.toFixed(1), status, principalValue, totalInterest, transCount: projectTrans.length };
+    });
+  }, [filteredProjects, transactions, calculateInterestSmart]);
+
+  const projectsByStatus = useMemo(() => {
+    const groups: Record<string, typeof projectsWithStats> = {
+      receiving: [], disbursing: [], completed: [],
+    };
+    projectsWithStats.forEach(p => { groups[p.status]?.push(p); });
+    return groups;
+  }, [projectsWithStats]);
+
+  // Pagination
+  const totalPages = viewMode === 'list'
+    ? Math.ceil(projectsWithStats.length / itemsPerPage)
+    : Math.ceil(Math.max(...STATUS_COLUMNS.map(c => (projectsByStatus[c.key] || []).length), 0) / itemsPerPage);
+  const paginatedStats = projectsWithStats.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
 
   const handlePageChange = (newPage: number) => {
-    if (newPage >= 1 && newPage <= totalPages) {
+    if (newPage >= 1 && newPage <= Math.max(totalPages, 1)) {
       setCurrentPage(newPage);
     }
   };
 
-  // Reset to page 1 when search changes
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm]);
-
-  // Stats Calculation - tính tổng giá trị thực tế bao gồm tiền bổ sung + lãi phát sinh
-  const totalProjects = filteredProjects.length;
-
-  // Tính tổng giá trị ban đầu (không có lãi, không có tiền bổ sung) - chỉ tính cho filtered projects
-  const totalInitialValue = filteredProjects.reduce((acc, p) => {
-    const projectTrans = transactions.filter(t => {
-      const pIdStr = (t.projectId && (t.projectId as any)._id) ? (t.projectId as any)._id.toString() : t.projectId?.toString();
-      return pIdStr === p.id || pIdStr === (p as any)._id;
-    });
-    const initialTotal = projectTrans.reduce((sum, t) => sum + t.compensation.totalApproved, 0);
-    return acc + (initialTotal > 0 ? initialTotal : p.totalBudget);
-  }, 0);
-
-  // Tính tổng giá trị hiện tại (bao gồm lãi + tiền bổ sung) - chỉ tính cho filtered projects
-  const totalValue = filteredProjects.reduce((acc, p) => {
-    return acc + getProjectActualTotal(p);
-  }, 0);
+  }, [searchTerm, viewMode]);
 
   const handleNewProjectClick = () => {
     fileInputRef.current?.click();
@@ -187,7 +258,6 @@ export const Projects: React.FC<ProjectsProps> = ({
       reader.onload = async (e) => {
         const base64 = e.target?.result as string;
         try {
-          // Call API to parse file for preview
           const res = await api.projects.import({
             fileData: base64,
             previewOnly: true
@@ -214,8 +284,7 @@ export const Projects: React.FC<ProjectsProps> = ({
         } catch (err: any) {
           console.error('Parse file failed:', err);
           let errMsg = err.message || 'Không thể trúng xuất dữ liệu';
-          
-          // Handle network errors specifically
+
           if (err.isNetworkError || err.message?.includes('kết nối') || err.message?.includes('server')) {
             errMsg = err.message || 'Không thể kết nối đến server backend.\n\nVui lòng:\n1. Kiểm tra backend server đã chạy chưa\n2. Chạy lệnh: npm run dev:server\n3. Đảm bảo server đang chạy trên port 3001';
           } else if (err.detectedColumns && err.detectedColumns.length > 0) {
@@ -224,7 +293,7 @@ export const Projects: React.FC<ProjectsProps> = ({
               errMsg += `\n\n- Tên: ${err.suggestions.name}\n- Số tiền: ${err.suggestions.amount}`;
             }
           }
-          
+
           alert('Lỗi đọc file: ' + errMsg);
         } finally {
           setIsUploading(false);
@@ -278,30 +347,27 @@ export const Projects: React.FC<ProjectsProps> = ({
           `Có ${response.data.skippedCount} giao dịch bị trùng đã bỏ qua:\n${duplicateMsg}`
         );
       } else {
-        const progressMsg = response.data?.newProgressPercent 
+        const progressMsg = response.data?.newProgressPercent
           ? `\nTiến độ dự án: ${response.data.newProgressPercent}%`
           : '';
         alert(`${mode === 'create' ? 'Tạo mới' : 'Merge'} thành công ${response.data.transactionCount} giao dịch!${progressMsg}`);
       }
 
-      // API call was successful, just call onImport to trigger refresh (without calling API again)
       setPreviewData(null);
       setImportMode(null);
-      
-      // Call onImport to trigger refresh in parent component
+
       if (onImport) {
         onImport(previewData.project, previewData.transactions);
       }
     } catch (error: any) {
       const errorMessage = error.message || 'Unknown error';
-      
-      // Check if error contains duplicate information
+
       if (error.responseData?.duplicates && Array.isArray(error.responseData.duplicates)) {
         const duplicateList = error.responseData.duplicates;
         const duplicateMsg = duplicateList
           .map((d: any) => `- ${d.name} (Mã: ${d.maHo}, Số tiền: ${formatCurrency(d.amount)})`)
           .join('\n');
-        
+
         alert(`Lỗi: ${errorMessage}\n\nGiao dịch trùng:\n${duplicateMsg}`);
       } else {
         alert(`Lỗi import: ${errorMessage}`);
@@ -326,7 +392,7 @@ export const Projects: React.FC<ProjectsProps> = ({
   };
 
   return (
-    <div className="space-y-6 animate-fade-in relative">
+    <div className="space-y-5 animate-fade-in relative">
       {/* Hidden File Input */}
       <input
         type="file"
@@ -336,282 +402,290 @@ export const Projects: React.FC<ProjectsProps> = ({
         className="hidden"
       />
 
-      {/* Main Header */}
-      <div className="flex justify-between items-end pb-2">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-2xl font-medium text-black tracking-tight">Quản lý dự án</h2>
-          <p className="text-sm font-medium text-slate-500 mt-1">Danh sách dự án & tiến độ đền bù</p>
+          <h2 className="text-2xl font-bold text-[#0f172a] tracking-tight">
+            {viewMode === 'kanban' ? 'Bảng theo dõi dự án' : 'Danh sách dự án'}
+          </h2>
+          <p className="text-xs font-medium text-slate-500 mt-1">Quản lý tiến độ công việc & tiến độ giải ngân theo từng giai đoạn</p>
         </div>
-        <button
-          onClick={handleNewProjectClick}
-          disabled={isUploading}
-          className="flex items-center gap-2 px-5 py-2 text-xs font-bold bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
-        >
-          {isUploading ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} strokeWidth={3} />}
-          <span>{isUploading ? 'ĐANG XỬ LÝ...' : 'DỰ ÁN MỚI'}</span>
-        </button>
-      </div>
-
-      {/* Stats Boxes */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <GlassCard hoverEffect className="flex items-center gap-5 p-6 border-slate-200">
-          <div className="p-3 rounded-lg bg-blue-600/10 border border-blue-600 text-blue-600">
-            <FolderKanban size={24} strokeWidth={2} />
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+            <input
+              type="text"
+              placeholder="Tìm theo mã, tên dự án..."
+              className="bg-white border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-sm text-black w-56 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 placeholder:text-slate-400"
+              value={searchTerm}
+              onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+            />
           </div>
-          <div>
-            <p className="text-[11px] font-semibold text-slate-600 uppercase tracking-widest">Tổng số dự án</p>
-            <p className="text-xl font-semibold text-black tracking-tight mt-0.5">{totalProjects}</p>
-            <p className="text-[11px] font-medium text-slate-500 mt-1">
-              {searchTerm ? `Kết quả tìm kiếm` : 'Đã tải lên hệ thống'}
-            </p>
-          </div>
-        </GlassCard>
-
-        <GlassCard hoverEffect className="flex items-center gap-5 p-6 border-slate-200">
-          <div className="p-3 rounded-lg bg-emerald-600/10 border border-emerald-600 text-emerald-600">
-            <Coins size={24} strokeWidth={2} />
-          </div>
-          <div>
-            <p className="text-[11px] font-semibold text-slate-600 uppercase tracking-widest">Tổng giá trị dự án</p>
-            <p className="text-xl font-semibold text-black tracking-tight mt-0.5">{formatCurrency(totalValue)}</p>
-            {totalInitialValue !== totalValue && (
-              <p className="text-[11px] font-medium text-slate-500 mt-1">Giá trị đầu: {formatCurrency(totalInitialValue)}</p>
-            )}
-            {totalInitialValue === totalValue && (
-              <p className="text-[11px] font-medium text-slate-500 mt-1">Ngân sách dự kiến</p>
-            )}
-          </div>
-        </GlassCard>
-      </div>
-
-      {/* Search Bar */}
-      <GlassCard className="p-4 border-slate-200">
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center gap-3">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <input
-                type="text"
-                placeholder="Tìm theo Mã dự án, Ngày GN, Tổng ngân sách/Tổng giá trị dự án..."
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-4 py-2 text-sm font-bold text-black focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-all placeholder:text-slate-400"
-                value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value);
-                  setCurrentPage(1);
-                }}
-              />
-            </div>
+          <button
+            onClick={() => exportProjectsToExcel(filteredProjects, transactions, interestRate, interestRateChangeDate, interestRateBefore, interestRateAfter)}
+            className="p-1.5 bg-white border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50 transition-all"
+            title="Tải xuống Excel"
+          >
+            <Download size={16} />
+          </button>
+          <div className="flex border border-slate-200 rounded-lg overflow-hidden">
             <button
-              onClick={() => exportProjectsToExcel(filteredProjects, transactions, interestRate, interestRateChangeDate, interestRateBefore, interestRateAfter)}
-              className="p-2 bg-white/60 hover:bg-white border border-slate-200 rounded-lg text-slate-600 transition-all shadow-sm group"
-              title="Tải xuống Excel"
+              onClick={() => setViewMode('kanban')}
+              className={`p-1.5 transition-colors ${viewMode === 'kanban' ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
+              title="Kanban"
             >
-              <Download size={18} className="group-hover:text-blue-600" />
+              <LayoutGrid size={16} />
             </button>
-            {searchTerm && (
-              <button
-                onClick={() => {
-                  setSearchTerm('');
-                  setCurrentPage(1);
-                }}
-                className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-semibold text-slate-700 hover:bg-slate-50 shadow-sm"
-              >
-                Xóa lọc
-              </button>
-            )}
+            <button
+              onClick={() => setViewMode('list')}
+              className={`p-1.5 transition-colors ${viewMode === 'list' ? 'bg-blue-600 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}`}
+              title="Danh sách"
+            >
+              <List size={16} />
+            </button>
           </div>
-          {searchTerm && (
-            <div className="text-xs font-medium text-slate-500">
-              Tìm thấy <span className="font-bold text-blue-600">{totalProjects}</span> dự án khớp với "{searchTerm}"
+          <button
+            onClick={handleNewProjectClick}
+            disabled={isUploading}
+            className="flex items-center gap-2 px-4 py-1.5 text-xs font-bold bg-[#005992] text-white rounded-lg hover:bg-[#004a7a] shadow-sm transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+          >
+            {isUploading ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} strokeWidth={3} />}
+            <span>{isUploading ? 'ĐANG XỬ LÝ...' : 'Dự án mới'}</span>
+          </button>
+        </div>
+      </div>
+
+      {searchTerm && (
+        <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+          Tìm thấy <span className="font-bold text-blue-600">{projectsWithStats.length}</span> dự án khớp với "{searchTerm}"
+          <button onClick={() => { setSearchTerm(''); setCurrentPage(1); }} className="ml-1 text-blue-600 hover:text-blue-700 font-bold">Xóa lọc</button>
+        </div>
+      )}
+
+      {/* ======== KANBAN VIEW ======== */}
+      {viewMode === 'kanban' && (() => {
+        const kanbanStart = (currentPage - 1) * itemsPerPage;
+        const kanbanEnd = currentPage * itemsPerPage;
+        return (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {STATUS_COLUMNS.map(col => {
+                const allItems = projectsByStatus[col.key] || [];
+                const pagedItems = allItems.slice(kanbanStart, kanbanEnd);
+                return (
+                  <div key={col.key} className={`bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden border-t-4 ${col.borderClass}`}>
+                    <div className="px-4 py-3 flex items-center justify-between bg-slate-50/50">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-2.5 h-2.5 rounded-full ${col.dotClass}`} />
+                        <span className="text-sm font-bold text-[#0f172a]">{col.label}</span>
+                      </div>
+                      {allItems.length > 0 && (
+                        <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">{allItems.length}</span>
+                      )}
+                    </div>
+                    <div className="px-3 pb-3 pt-2 space-y-3">
+                      {pagedItems.map(({ project, actualTotalBudget, percent, percentStr, principalValue, totalInterest, transCount }) => (
+                        <div
+                          key={project.id}
+                          className="bg-white border border-slate-200 rounded-lg p-4 hover:shadow-md hover:border-slate-300 transition-all cursor-pointer"
+                          onClick={() => onViewDetails(project.code)}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] font-mono font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
+                              {project.code}
+                            </span>
+                            <span className="text-[11px] font-medium text-slate-500">{transCount} hộ</span>
+                          </div>
+                          <p className="text-sm font-bold text-[#0f172a] mt-2 line-clamp-2 leading-snug">{project.name}</p>
+                          <div className="mt-3 space-y-1.5 text-xs">
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-500">Ngày giải ngân</span>
+                              <span className="font-bold text-[#0f172a]">{project.interestStartDate ? formatDate(project.interestStartDate) : '-'}</span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-500">Giá trị dự án</span>
+                              <span className="font-semibold text-[#0f172a]">{formatCurrency(principalValue)}</span>
+                            </div>
+                            {totalInterest > 0 && (
+                              <div className="flex items-center justify-between">
+                                <span className="text-slate-500">Lãi phát sinh</span>
+                                <span className="font-semibold text-rose-600">{formatCurrency(totalInterest)}</span>
+                              </div>
+                            )}
+                            <div className="flex items-center justify-between pt-1.5 border-t border-slate-100">
+                              <span className="text-slate-700 font-bold">Tổng giá trị</span>
+                              <span className="font-bold text-[#0f172a]">{formatCurrency(actualTotalBudget)}</span>
+                            </div>
+                          </div>
+                          <div className="mt-3 pt-2 border-t border-slate-100">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-[11px] text-slate-500 font-medium">Tiến độ giải ngân</span>
+                              <span className="text-[11px] font-bold text-[#0f172a]">{percentStr}%</span>
+                            </div>
+                            <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                              <div className={`h-full rounded-full transition-all ${getProgressColor(percent)}`} style={{ width: `${Math.min(percent, 100)}%` }} />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      {pagedItems.length === 0 && (
+                        <div className="text-center py-10 text-xs text-slate-400 italic">Không có dự án</div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {/* Kanban Pagination */}
+            {(() => {
+              const maxColItems = Math.max(...STATUS_COLUMNS.map(c => (projectsByStatus[c.key] || []).length), 0);
+              const kanbanPages = Math.ceil(maxColItems / itemsPerPage);
+              if (kanbanPages <= 1) return null;
+              return (
+                <div className="flex justify-center items-center gap-3 pt-2">
+                  <button
+                    onClick={() => handlePageChange(currentPage - 1)}
+                    disabled={currentPage === 1}
+                    className="p-1.5 rounded-lg border border-slate-200 text-slate-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 transition-colors"
+                  >
+                    <ChevronLeft size={16} strokeWidth={2} />
+                  </button>
+                  <span className="text-xs font-bold text-slate-600">Trang {currentPage} / {kanbanPages}</span>
+                  <button
+                    onClick={() => handlePageChange(currentPage + 1)}
+                    disabled={currentPage >= kanbanPages}
+                    className="p-1.5 rounded-lg border border-slate-200 text-slate-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 transition-colors"
+                  >
+                    <ChevronRight size={16} strokeWidth={2} />
+                  </button>
+                </div>
+              );
+            })()}
+          </>
+        );
+      })()}
+
+      {/* ======== LIST VIEW ======== */}
+      {viewMode === 'list' && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border-collapse text-center">
+              <thead>
+                <tr className="border-b border-slate-300 bg-slate-50 divide-x divide-slate-300">
+                  <th className="text-[10px] font-bold text-black uppercase tracking-wide py-3 px-3 text-center whitespace-nowrap">Mã dự án</th>
+                  <th className="text-[10px] font-bold text-black uppercase tracking-wide py-3 px-3 text-center whitespace-nowrap">Tên dự án</th>
+                  <th className="text-[10px] font-bold text-black uppercase tracking-wide py-3 px-3 text-center whitespace-nowrap">Tổng mức (VNĐ)</th>
+                  <th className="text-[10px] font-bold text-black uppercase tracking-wide py-3 px-3 text-center whitespace-nowrap">Tiến độ</th>
+                  <th className="text-[10px] font-bold text-black uppercase tracking-wide py-3 px-3 text-center whitespace-nowrap">Trạng thái</th>
+                  <th className="text-[10px] font-bold text-black uppercase tracking-wide py-3 px-3 text-center whitespace-nowrap">Ngày Upload</th>
+                  <th className="text-[10px] font-bold text-black uppercase tracking-wide py-3 px-3 text-center whitespace-nowrap">Ngày giải ngân & Tính lãi</th>
+                  <th className="text-[10px] font-bold text-black uppercase tracking-wide py-3 px-3 text-center whitespace-nowrap">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody className="text-sm">
+                {paginatedStats.map(({ project, actualTotalBudget, percent, percentStr, status }) => {
+                  const statusConfig = STATUS_COLUMNS.find(s => s.key === status)!;
+                  return (
+                    <tr key={project.id} className="border-b border-slate-200 hover:bg-slate-50 divide-x divide-slate-200">
+                      <td className="py-2.5 px-3 text-center">
+                        <span className="text-xs font-semibold bg-blue-50 px-1.5 py-0.5 rounded text-blue-700">
+                          {project.code}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-center font-medium text-[#0f172a] max-w-[280px]">
+                        <span className="line-clamp-1">{project.name}</span>
+                      </td>
+                      <td className="py-2.5 px-3 text-center font-bold text-[#0f172a]">{formatCurrency(actualTotalBudget)}</td>
+                      <td className="py-2.5 px-3 text-center">
+                        <div className="flex items-center gap-2 justify-center">
+                          <div className="w-20 h-2 bg-slate-100 rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full ${getProgressColor(percent)}`} style={{ width: `${Math.min(percent, 100)}%` }} />
+                          </div>
+                          <span className="text-[10px] font-bold text-[#0f172a] w-10">{percentStr}%</span>
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-3 text-center">
+                        <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap ${statusConfig.badgeBg} ${statusConfig.badgeText}`}>
+                          {statusConfig.label}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-center text-xs text-[#0f172a]">
+                        {project.uploadDate ? formatDate(project.uploadDate) : '-'}
+                      </td>
+                      <td className="py-2.5 px-3 text-center text-xs font-bold text-[#0f172a]">
+                        {project.interestStartDate ? formatDate(project.interestStartDate) : 'Chưa thiết lập'}
+                      </td>
+                      <td className="py-2.5 px-3 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => openEditModal(project)}
+                            className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-100 rounded-lg transition-all"
+                            title="Cập nhật dự án"
+                          >
+                            <Edit2 size={15} strokeWidth={2} />
+                          </button>
+                          <button
+                            onClick={() => onViewDetails(project.code)}
+                            className="p-1.5 text-slate-500 hover:text-emerald-600 hover:bg-emerald-100 rounded-lg transition-all"
+                            title="Xem chi tiết"
+                          >
+                            <Eye size={15} strokeWidth={2} />
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (window.confirm('Bạn có chắc chắn muốn xóa dự án này? Tất cả hồ sơ liên quan sẽ bị xóa.')) {
+                                onDeleteProject(project.id!);
+                              }
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                            title="Xóa dự án"
+                          >
+                            <Trash2 size={15} strokeWidth={2} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="p-4 border-t border-slate-200 flex justify-between items-center">
+              <div className="text-xs font-bold text-slate-500">
+                Hiển thị {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, projectsWithStats.length)} trên tổng số {projectsWithStats.length} dự án
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  className="p-1.5 rounded-lg border border-slate-200 text-slate-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 transition-colors"
+                >
+                  <ChevronLeft size={16} strokeWidth={2} />
+                </button>
+                <div className="flex items-center justify-center px-3 bg-white border border-slate-200 rounded-lg text-xs font-bold text-blue-700 shadow-sm">
+                  Trang {currentPage} / {totalPages}
+                </div>
+                <button
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                  className="p-1.5 rounded-lg border border-slate-200 text-slate-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 transition-colors"
+                >
+                  <ChevronRight size={16} strokeWidth={2} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {projectsWithStats.length === 0 && (
+            <div className="p-12 text-center text-slate-400 font-medium">
+              {searchTerm ? `Không tìm thấy dự án nào khớp với "${searchTerm}"` : 'Chưa có dự án nào'}
             </div>
           )}
         </div>
-      </GlassCard>
-
-      {/* MAIN PROJECT TABLE */}
-      <GlassCard className="overflow-hidden p-0 border-slate-300 shadow-sm mt-6">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left">
-            <thead className="text-[10px] text-slate-700 uppercase font-bold bg-slate-100 border-b border-slate-200 backdrop-blur-sm">
-              <tr>
-                <th className="px-4 py-3.5 text-center w-12 border-r border-slate-200">STT</th>
-                <th className="px-4 py-3.5 border-r border-slate-200">Mã dự án</th>
-                <th className="px-4 py-3.5 border-r border-slate-200">Tên dự án</th>
-                <th className="px-4 py-3.5 text-right border-r border-slate-200">Tổng ngân sách</th>
-                <th className="px-4 py-3.5 text-center border-r border-slate-200">Ngày Upload</th>
-                <th className="px-4 py-3.5 text-center border-r border-slate-200">Ngày GN & Tính lãi</th>
-                <th className="px-4 py-3.5 w-40 border-r border-slate-200">Tiến độ</th>
-                <th className="px-4 py-3.5 text-center w-32">Thao tác</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-300">
-              {paginatedProjects.map((project, index) => {
-                // Calculate Progress - bao gồm cả tiền bổ sung + lãi phát sinh
-                const projectTrans = transactions.filter(t => {
-                  const pIdStr = (t.projectId && (t.projectId as any)._id) ? (t.projectId as any)._id.toString() : t.projectId?.toString();
-                  return pIdStr === project.id || pIdStr === (project as any)._id;
-                });
-                // Tổng đã giải ngân (bao gồm cả giải ngân hoàn toàn và rút một phần)
-                const disbursedFull = projectTrans
-                  .filter(t => t.status === TransactionStatus.DISBURSED)
-                  .reduce((acc, t) => {
-                    const supplementary = t.supplementaryAmount || 0;
-                    const baseDate = t.effectiveInterestDate || project.interestStartDate || (project as any).startDate;
-                    const interest = t.disbursementDate
-                      ? calculateInterestSmart(t.compensation.totalApproved, baseDate, new Date(t.disbursementDate))
-                      : 0;
-                    const computedTotal = roundTo2(t.compensation.totalApproved + interest + supplementary);
-
-                    // For disbursed transactions: prefer disbursedTotal if it's consistent; otherwise fallback to computedTotal
-                    const storedTotal = Number((t as any).disbursedTotal);
-                    const totalToUse =
-                      isFinite(storedTotal) && storedTotal > 0 && Math.abs(roundTo2(storedTotal) - computedTotal) < 0.01
-                        ? roundTo2(storedTotal)
-                        : computedTotal;
-
-                    return acc + totalToUse;
-                  }, 0);
-
-                const disbursedPartial = projectTrans
-                  .filter(t => t.status !== TransactionStatus.DISBURSED && (t as any).withdrawnAmount)
-                  .reduce((acc, t) => acc + ((t as any).withdrawnAmount || 0), 0);
-
-                const disbursed = disbursedFull + disbursedPartial;
-
-                // Tính tổng giá trị dự án thực tế (bao gồm tiền bổ sung + lãi phát sinh)
-                // Match Dashboard logic: use disbursedTotal for DISBURSED transactions
-                const actualTotalBudget = projectTrans.reduce((sum, t) => {
-                  // Với giao dịch chưa giải ngân hoàn toàn, chỉ tính trên phần gốc còn lại (principalForInterest)
-                  const supplementary = t.supplementaryAmount || 0;
-                  const baseDate = t.effectiveInterestDate || project.interestStartDate || (project as any).startDate;
-                  const principalBase = (t as any).principalForInterest ?? t.compensation.totalApproved;
-                  let interest = 0;
-                  if (t.status === TransactionStatus.DISBURSED && t.disbursementDate) {
-                    interest = calculateInterestSmart(t.compensation.totalApproved, baseDate, new Date(t.disbursementDate));
-                  } else if (t.status !== TransactionStatus.DISBURSED) {
-                    interest = calculateInterestSmart(principalBase, baseDate, new Date());
-                  }
-                  const computedTotal = roundTo2(principalBase + interest + supplementary);
-
-                  // For disbursed transactions: prefer disbursedTotal if it's consistent; otherwise fallback to computedTotal
-                  if (t.status === TransactionStatus.DISBURSED) {
-                    const storedTotal = Number((t as any).disbursedTotal);
-                    if (isFinite(storedTotal) && storedTotal > 0 && Math.abs(roundTo2(storedTotal) - computedTotal) < 0.01) {
-                      return sum + roundTo2(storedTotal);
-                    }
-                  }
-
-                  return sum + computedTotal;
-                }, 0);
-
-                const percent = actualTotalBudget > 0 ? (disbursed / actualTotalBudget) * 100 : 0;
-                const percentStr = percent.toFixed(1);
-
-                return (
-                  <tr key={project.id} className="hover:bg-blue-50/30 transition-colors">
-                    <td className="px-4 py-3 text-center text-slate-700 font-bold border-r border-slate-200">
-                      {(currentPage - 1) * itemsPerPage + index + 1}
-                    </td>
-                    <td className="px-4 py-3 border-r border-slate-200">
-                      <span className="text-[11px] font-mono font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                        {project.code}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 border-r border-slate-200">
-                      <p className="text-slate-900 font-bold">{project.name}</p>
-                    </td>
-                    <td className="px-4 py-3 text-right font-bold text-slate-800 border-r border-slate-200">
-                      {formatCurrency(actualTotalBudget)}
-                      {actualTotalBudget !== project.totalBudget && (
-                        <span className="text-[10px] text-slate-500 block font-normal">
-                          Giá trị đầu: {formatCurrency(project.totalBudget)}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-center text-xs text-slate-700 font-medium border-r border-slate-200">
-                      {project.uploadDate ? formatDate(project.uploadDate) : '-'}
-                    </td>
-                    <td className="px-4 py-3 text-center text-xs font-bold text-blue-700 bg-blue-50/50 mx-2 border-r border-slate-200">
-                      {project.interestStartDate ? formatDate(project.interestStartDate) : 'Chưa thiết lập'}
-                    </td>
-                    <td className="px-4 py-3 border-r border-slate-200">
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden border border-slate-200">
-                          <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${percent}%` }}></div>
-                        </div>
-                        <span className="text-[10px] font-bold text-emerald-700 w-8">{percentStr}%</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <div className="flex items-center justify-center gap-2">
-                        <button
-                          onClick={() => openEditModal(project)}
-                          className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-100 rounded-lg transition-all border border-transparent hover:border-blue-200"
-                          title="Cập nhật dự án"
-                        >
-                          <Edit2 size={16} strokeWidth={2} />
-                        </button>
-                        <button
-                          onClick={() => onViewDetails(project.code)}
-                          className="p-1.5 text-slate-500 hover:text-emerald-600 hover:bg-emerald-100 rounded-lg transition-all border border-transparent hover:border-emerald-200"
-                          title="Xem chi tiết"
-                        >
-                          <Eye size={16} strokeWidth={2} />
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (window.confirm('Bạn có chắc chắn muốn xóa dự án này? Tất cả hồ sơ liên quan sẽ bị xóa.')) {
-                              onDeleteProject(project.id!);
-                            }
-                          }}
-                          className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all border border-transparent hover:border-red-100"
-                          title="Xóa dự án"
-                        >
-                          <Trash2 size={16} strokeWidth={2} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Pagination Controls */}
-        {totalPages > 1 && (
-          <div className="p-4 bg-white/50 border-t border-slate-200 flex justify-between items-center backdrop-blur-sm">
-            <div className="text-xs font-bold text-slate-500">
-              Hiển thị {(currentPage - 1) * itemsPerPage + 1} - {Math.min(currentPage * itemsPerPage, filteredProjects.length)} trên tổng số {filteredProjects.length} dự án
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => handlePageChange(currentPage - 1)}
-                disabled={currentPage === 1}
-                className="p-1.5 rounded-lg border border-slate-200 text-slate-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 transition-colors"
-              >
-                <ChevronLeft size={16} strokeWidth={2} />
-              </button>
-              <div className="flex items-center justify-center px-3 bg-white border border-slate-200 rounded-lg text-xs font-bold text-blue-700 shadow-sm">
-                Trang {currentPage} / {totalPages}
-              </div>
-              <button
-                onClick={() => handlePageChange(currentPage + 1)}
-                disabled={currentPage === totalPages}
-                className="p-1.5 rounded-lg border border-slate-200 text-slate-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-100 transition-colors"
-              >
-                <ChevronRight size={16} strokeWidth={2} />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {filteredProjects.length === 0 && (
-          <div className="p-12 text-center text-slate-400 font-medium">
-            {searchTerm ? `Không tìm thấy dự án nào khớp với "${searchTerm}"` : 'Chưa có dự án nào'}
-          </div>
-        )}
-      </GlassCard>
+      )}
 
       {/* EDIT PROJECT MODAL */}
       {editingProject && (
@@ -694,7 +768,6 @@ export const Projects: React.FC<ProjectsProps> = ({
         </div>
       )}
 
-
       {/* PREVIEW MODAL */}
       {previewData && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-md p-4 animate-in fade-in zoom-in duration-200">
@@ -748,7 +821,7 @@ export const Projects: React.FC<ProjectsProps> = ({
                 </div>
                 <div className="sm:col-span-1">
                   <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1 flex items-center gap-1">
-                    Ngày GN & Tính lãi <Edit2 size={10} className="text-slate-400" />
+                    Ngày giải ngân & Tính lãi <Edit2 size={10} className="text-slate-400" />
                   </label>
                   <div className="relative flex">
                     <input

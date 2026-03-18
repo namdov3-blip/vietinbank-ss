@@ -13,6 +13,10 @@ import { ConfirmPage } from './pages/ConfirmPage';
 import { InterestCalculator } from './pages/InterestCalculator';
 import { LiveClock } from './components/LiveClock';
 import { api } from './services/api';
+import { WeeklyBalanceActivityModal } from './components/WeeklyBalanceActivityModal';
+import { Landmark } from 'lucide-react';
+import { Calculator } from 'lucide-react';
+import { InterestCalculatorQuickModal } from './components/InterestCalculatorQuickModal';
 import { useDashboardPoll } from './hooks/usePoll';
 import {
   Transaction,
@@ -57,6 +61,11 @@ const App: React.FC = () => {
 
   // Auth State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Quick balance popup (7-day activity)
+  const [isBalanceWeeklyOpen, setIsBalanceWeeklyOpen] = useState(false);
+  const [isInterestCalcOpen, setIsInterestCalcOpen] = useState(false);
 
   // Data State - loaded from API
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -405,12 +414,15 @@ const App: React.FC = () => {
         return <Dashboard
           transactions={transactions}
           projects={projects}
+          users={users}
           interestRate={interestRate}
           interestRateChangeDate={interestRateChangeDate}
           interestRateBefore={interestRateBefore}
           interestRateAfter={interestRateAfter}
           bankAccount={bankAccount}
           setActiveTab={setActiveTab}
+          onOpenBalanceModal={() => setIsBalanceWeeklyOpen(true)}
+          onOpenInterestCalcModal={() => setIsInterestCalcOpen(true)}
           currentUser={currentUser!}
         />;
       case 'projects':
@@ -580,13 +592,60 @@ const App: React.FC = () => {
 
   return (
     <HashRouter>
-      <div className="min-h-screen text-slate-800 font-sans selection:bg-blue-100 selection:text-blue-900">
+      <div className="min-h-screen text-slate-800 font-sans selection:bg-blue-100 selection:text-blue-900 bg-[#d4e9f5]">
         <div>
-          <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} currentUser={currentUser} onLogout={handleLogout} />
+          <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} currentUser={currentUser} onLogout={handleLogout} collapsed={sidebarCollapsed} onToggleCollapse={() => setSidebarCollapsed(c => !c)} />
         </div>
-        <main className="ml-64 p-8 min-h-screen relative bg-[#f8fafc]">
+        <main className="p-8 min-h-screen relative bg-[#e6f3fb] transition-all duration-300" style={{ marginLeft: sidebarCollapsed ? 72 : 256 }}>
           {renderContent()}
         </main>
+
+        {/* Quick balance button (bottom-right, above LiveClock) */}
+        {currentUser && (
+          <button
+            type="button"
+            onClick={() => setIsBalanceWeeklyOpen(true)}
+            className="fixed bottom-24 right-4 z-50 w-16 h-16 rounded-full bg-white/85 backdrop-blur-md border border-[#0b5fa5]/25 shadow-xl hover:bg-white transition-colors flex items-center justify-center"
+            title="Số dư & hoạt động 7 ngày gần nhất"
+          >
+            <Landmark size={26} className="text-[#0b5fa5]" />
+          </button>
+        )}
+        {/* Interest calculator quick popup (bottom-right, above balance button) */}
+        {currentUser && (
+          <button
+            type="button"
+            onClick={() => setIsInterestCalcOpen(true)}
+            className="fixed bottom-[11rem] right-4 z-50 w-16 h-16 rounded-full bg-white/85 backdrop-blur-md border border-[#0b5fa5]/25 shadow-xl hover:bg-white transition-colors flex items-center justify-center"
+            title="Tính lãi dự kiến"
+          >
+            <Calculator size={26} className="text-[#0b5fa5]" />
+          </button>
+        )}
+
+        <WeeklyBalanceActivityModal
+          open={isBalanceWeeklyOpen}
+          onClose={() => setIsBalanceWeeklyOpen(false)}
+          currentUser={currentUser!}
+          transactions={transactions}
+          projects={projects}
+          bankAccount={bankAccount}
+          bankTransactions={bankTransactions}
+          interestRate={interestRate}
+          interestRateChangeDate={interestRateChangeDate}
+          interestRateBefore={interestRateBefore}
+          interestRateAfter={interestRateAfter}
+        />
+
+        <InterestCalculatorQuickModal
+          open={isInterestCalcOpen}
+          onClose={() => setIsInterestCalcOpen(false)}
+          currentUser={currentUser!}
+          transactions={transactions}
+          projects={projects}
+          interestRate={interestRate}
+        />
+
         {/* Live Clock - Bottom Right (only show when logged in) */}
         {currentUser && <LiveClock />}
         {selectedTransaction && (

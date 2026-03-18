@@ -54,6 +54,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             return res.status(401).json({ error: 'Mật khẩu không đúng' });
         }
 
+        // Chặn đăng nhập nếu tài khoản chưa được admin phê duyệt
+        const currentStatus = (user as any).status || 'Active';
+        if (currentStatus !== 'Active') {
+            return res.status(403).json({ error: 'Tài khoản của bạn đang chờ Admin phê duyệt.' });
+        }
+
         // Generate JWT token
         const token = generateToken({
             userId: user._id.toString(),

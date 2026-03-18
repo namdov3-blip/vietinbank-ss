@@ -51,6 +51,7 @@ async function handle(req: Request, res: Response, importPath: string) {
 
 // ============ AUTH ============
 app.post('/api/auth/login', (req, res) => handle(req, res, './backend/handlers/auth/login'));
+app.post('/api/auth/register', (req, res) => handle(req, res, './backend/handlers/auth/register'));
 app.get('/api/auth/me', (req, res) => handle(req, res, './backend/handlers/auth/me'));
 app.post('/api/auth/refresh', (req, res) => handle(req, res, './backend/handlers/auth/refresh'));
 

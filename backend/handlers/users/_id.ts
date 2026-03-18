@@ -41,13 +41,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         // PUT - Update user
         if (req.method === 'PUT') {
-            const { name, password, role, permissions, organization } = req.body;
+            const { name, password, role, permissions, organization, status } = req.body;
 
             const updateData: any = {};
+            if (status !== undefined && status === 'Active' && payload.role !== 'Admin') {
+                return res.status(403).json({ error: 'Chỉ Admin mới được phê duyệt tài khoản.' });
+            }
             if (name) updateData.name = name;
             if (role) updateData.role = role;
             if (permissions) updateData.permissions = permissions;
             if (organization !== undefined) updateData.organization = organization;
+            if (status !== undefined) updateData.status = status;
             if (password) {
                 updateData.password = await hashPassword(password);
             }

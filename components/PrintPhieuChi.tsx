@@ -129,7 +129,7 @@ export const PrintPhieuChi: React.FC<PrintPhieuChiProps> = ({
         ? new Date(printDateOverride).toISOString()
         : defaultPrintDateISO;
 
-    // Keep default editable GN date in sync when opening the preview / when transaction changes
+    // Keep default editable disbursement date in sync when opening the preview / when transaction changes
     useEffect(() => {
         // If transaction has disbursementDate, use it; otherwise default to today's date in VN timezone
         // This ensures the date picker shows the correct date when opening preview

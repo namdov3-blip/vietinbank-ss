@@ -2,18 +2,24 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { GlassCard } from '../components/GlassCard';
 import { Transaction, TransactionStatus, Project, User, BankAccount } from '../types';
-import { formatCurrency, calculateInterest, calculateInterestWithRateChange, formatDate, roundTo2 } from '../utils/helpers';
+import { formatCurrency, calculateInterest, calculateInterestWithRateChange, formatDate, roundTo2, exportTransactionsToExcel } from '../utils/helpers';
 import {
   ComposedChart,
   Line,
   Bar,
+  BarChart,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   Legend,
   ResponsiveContainer,
-  TooltipProps
+  PieChart,
+  Pie,
+  Cell,
+  Area,
+  AreaChart,
+  LabelList
 } from 'recharts';
 import {
   Wallet,
@@ -25,42 +31,75 @@ import {
   AlertCircle,
   PiggyBank,
   Check,
-  ChevronRight
+  ChevronRight,
+  Landmark,
+  FolderKanban,
+  Calculator,
+  ShieldCheck,
+  LayoutDashboard,
+  Clock,
+  PauseCircle,
+  Search,
+  Download
 } from 'lucide-react';
 
 interface DashboardProps {
   transactions: Transaction[];
   projects: Project[];
+  users?: User[];
   interestRate: number;
   interestRateChangeDate?: string | null;
   interestRateBefore?: number | null;
   interestRateAfter?: number | null;
   bankAccount: BankAccount;
   setActiveTab: (tab: string) => void;
+  onOpenBalanceModal: () => void;
+  onOpenInterestCalcModal: () => void;
   currentUser: User;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ 
   transactions, 
   projects, 
+  users = [], 
   interestRate, 
   interestRateChangeDate,
   interestRateBefore,
   interestRateAfter,
   bankAccount, 
   setActiveTab, 
+  onOpenBalanceModal,
+  onOpenInterestCalcModal,
   currentUser 
 }) => {
   const [selectedProjectIds, setSelectedProjectIds] = React.useState<string[]>([]);
-  const chartContainerRef = useRef<HTMLDivElement>(null);
-  const [chartDimensions, setChartDimensions] = useState({ width: 800, height: 450 }); // Giá trị mặc định hợp lý
-  // Keep internal values as ISO (yyyy-mm-dd) for reliable Date parsing/filtering.
-  const [startDate, setStartDate] = useState<string>(''); // ISO yyyy-mm-dd
-  const [endDate, setEndDate] = useState<string>(''); // ISO yyyy-mm-dd
+  const [inputStartDate, setInputStartDate] = useState<string>('');
+  const [inputEndDate, setInputEndDate] = useState<string>('');
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+  const [pendingSearch, setPendingSearch] = useState('');
+  const [paymentListPage, setPaymentListPage] = useState(0);
   const formattedStart = startDate ? formatDate(startDate) : '---';
   const formattedEnd = endDate ? formatDate(endDate) : '---';
 
-  // Helper function to calculate interest with rate change if configured
+  const inputStartRef = useRef(inputStartDate);
+  const inputEndRef = useRef(inputEndDate);
+  inputStartRef.current = inputStartDate;
+  inputEndRef.current = inputEndDate;
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setStartDate(inputStartRef.current);
+      setEndDate(inputEndRef.current);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [inputStartDate, inputEndDate]);
+
+  const resolveProject = React.useCallback((t: Transaction) => {
+    const pIdStr = (t.projectId && (t.projectId as any)._id) ? (t.projectId as any)._id.toString() : t.projectId?.toString();
+    return projects.find(p => (p.id === pIdStr || (p as any)._id === pIdStr));
+  }, [projects]);
+
   const calculateInterestSmart = React.useCallback((
     principal: number,
     baseDate: string | undefined,
@@ -82,18 +121,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
   }, [interestRate, interestRateChangeDate, interestRateBefore, interestRateAfter]);
 
-  const getRelevantDate = React.useCallback((t: Transaction) => {
-    const pIdStr = (t.projectId && (t.projectId as any)._id) ? (t.projectId as any)._id.toString() : t.projectId?.toString();
-    const project = projects.find(p => (p.id === pIdStr || (p as any)._id === pIdStr));
-    // ALWAYS return the interest start date for filtering, regardless of disbursement status
-    // This ensures transactions are filtered by their interest calculation start date,
-    // not by their actual disbursement date, which may be much later
+  const getRelevantDate = React.useCallback((t: Transaction, projectParam?: Project) => {
+    const project = projectParam ?? resolveProject(t);
     const baseDate = t.effectiveInterestDate || project?.interestStartDate || (project as any)?.startDate;
     return baseDate;
-  }, [projects]);
+  }, [resolveProject]);
 
-  const isWithinDateRange = React.useCallback((dateStr?: string) => {
-    if (!startDate && !endDate) return true;
+  const isDateWithinRange = React.useCallback((dateStr?: string) => {
     if (!dateStr) return false;
     const value = new Date(dateStr);
     if (isNaN(value.getTime())) return false;
@@ -108,44 +142,37 @@ export const Dashboard: React.FC<DashboardProps> = ({
     return true;
   }, [startDate, endDate]);
 
-  // Point-in-Time helpers: Determine effective status and calculation date at filter time
+  const isTransactionInDateRange = React.useCallback((t: Transaction, project?: Project) => {
+    if (!startDate && !endDate) return true;
+    const interestDate = t.effectiveInterestDate || project?.interestStartDate || (project as any)?.startDate;
+    if (isDateWithinRange(interestDate)) return true;
+    if (t.disbursementDate && isDateWithinRange(t.disbursementDate)) return true;
+    return false;
+  }, [startDate, endDate, isDateWithinRange]);
+
   const getEffectiveStatus = React.useCallback((t: Transaction): TransactionStatus => {
-    // If no end date filter, return actual status
     if (!endDate) return t.status;
-    
-    // If transaction has disbursementDate and it's AFTER the filter end date,
-    // treat it as NOT disbursed (point-in-time view)
     if (t.disbursementDate) {
       const disbursementDateTime = new Date(t.disbursementDate).getTime();
       const filterEndTime = new Date(endDate).setHours(23, 59, 59, 999);
-      
       if (disbursementDateTime > filterEndTime) {
-        // At filter time, this transaction was not yet disbursed
         return TransactionStatus.PENDING;
       }
     }
-    
-    // Otherwise return actual status
     return t.status;
   }, [endDate]);
 
   const getEffectiveCalculationDate = React.useCallback((t: Transaction): Date => {
-    // If no end date filter, use current logic
     if (!endDate) {
       if (t.status === TransactionStatus.DISBURSED && t.disbursementDate) {
         return new Date(t.disbursementDate);
       }
-      return new Date(); // Current date for pending
+      return new Date();
     }
-    
-    // With filter: check if transaction was disbursed at filter time
     const effectiveStatus = getEffectiveStatus(t);
-    
     if (effectiveStatus === TransactionStatus.DISBURSED && t.disbursementDate) {
-      // Was disbursed before filter date, use disbursementDate
       return new Date(t.disbursementDate);
     } else {
-      // Was not disbursed at filter time, use filter end date
       const filterEnd = new Date(endDate);
       filterEnd.setHours(23, 59, 59, 999);
       return filterEnd;
@@ -160,147 +187,135 @@ export const Dashboard: React.FC<DashboardProps> = ({
   }, [projects, selectedProjectIds]);
 
   const dateFilteredTransactions = useMemo(() => {
-    return transactions.filter(t => isWithinDateRange(getRelevantDate(t)));
-  }, [transactions, isWithinDateRange, getRelevantDate]);
+    return transactions.filter(t => {
+      const project = resolveProject(t);
+      return isTransactionInDateRange(t, project);
+    });
+  }, [transactions, resolveProject, isTransactionInDateRange]);
 
   const filteredTransactions = useMemo(() => {
-    const base = dateFilteredTransactions;
-    if (selectedProjectIds.length === 0) return base;
-    return base.filter(t => selectedProjectIds.includes(t.projectId));
+    let base = dateFilteredTransactions;
+    if (selectedProjectIds.length > 0) {
+      base = base.filter(t => {
+        const pIdStr = (t.projectId && (t.projectId as any)._id) ? (t.projectId as any)._id.toString() : t.projectId?.toString();
+        return selectedProjectIds.includes(pIdStr);
+      });
+    }
+    return base;
   }, [dateFilteredTransactions, selectedProjectIds]);
 
   const statsTotalProjects = filteredProjects.length;
-  const statsTotalHouseholds = filteredTransactions.length;
 
-  // Use effective status at filter time instead of actual status
-  const statsDisbursedTrans = filteredTransactions.filter(t => getEffectiveStatus(t) === TransactionStatus.DISBURSED);
+  const isDateFiltered = !!(startDate || endDate);
 
-  // Tổng tiền đã giải ngân (at filter time):
-  // - Với giao dịch DISBURSED tại thời điểm filter: tính lãi đến ngày filter (nếu có) hoặc disbursementDate
-  // - Với giao dịch còn PENDING/HOLD nhưng đã rút một phần: cộng thêm withdrawnAmount
-  const statsDisbursedAmountRawFromDisbursed = statsDisbursedTrans.reduce((acc, t) => {
-    const project = projects.find(p => p.id === t.projectId);
-    const baseDate = t.effectiveInterestDate || project?.interestStartDate;
-    const principalBase = (t as any).principalForInterest ?? t.compensation.totalApproved;
-    
-    // Use effective calculation date (respects filter date)
-    const calcDate = getEffectiveCalculationDate(t);
-    
-    const interest = calculateInterestSmart(principalBase, baseDate, calcDate);
-    const supplementary = t.supplementaryAmount || 0;
-    return acc + principalBase + interest + supplementary;
-  }, 0);
+  const statsTotalProjectValueUploaded = useMemo(() => {
+    return filteredProjects.reduce((acc, project) => {
+      const projectTrans = filteredTransactions.filter(t => {
+        const pIdStr = (t.projectId && (t.projectId as any)._id) ? (t.projectId as any)._id.toString() : t.projectId?.toString();
+        return pIdStr === project.id || pIdStr === (project as any)._id;
+      });
+      const actualTotal = projectTrans.reduce((sum, t) => {
+        const supplementary = t.supplementaryAmount || 0;
+        const effStatus = getEffectiveStatus(t);
+        const baseDate = t.effectiveInterestDate || project.interestStartDate || (project as any).startDate;
+        const principalBase = (t as any).principalForInterest ?? t.compensation.totalApproved;
+        const calcDate = getEffectiveCalculationDate(t);
+        const interest = calculateInterestSmart(principalBase, baseDate, calcDate);
+        return sum + principalBase + interest + supplementary;
+      }, 0);
+      return acc + (actualTotal > 0 ? actualTotal : (isDateFiltered ? 0 : project.totalBudget));
+    }, 0);
+  }, [filteredProjects, filteredTransactions, calculateInterestSmart, getEffectiveStatus, getEffectiveCalculationDate, isDateFiltered]);
 
-  // Đã rút một phần tiền từ các giao dịch chưa DISBURSED (Tồn đọng/Giữ hộ) tại thời điểm filter:
-  const statsDisbursedAmountRawFromPartial = filteredTransactions
-    .filter(t => getEffectiveStatus(t) !== TransactionStatus.DISBURSED && (t as any).withdrawnAmount)
-    .reduce((acc, t) => {
-      const withdrawn = (t as any).withdrawnAmount || 0;
-      return acc + withdrawn;
+  const computedStats = useMemo(() => {
+    const disbursedTrans = filteredTransactions.filter(t => getEffectiveStatus(t) === TransactionStatus.DISBURSED);
+
+    const disbursedAmountFromFull = disbursedTrans.reduce((acc, t) => {
+      const project = resolveProject(t);
+      const baseDate = t.effectiveInterestDate || project?.interestStartDate || (project as any)?.startDate;
+      const principalBase = (t as any).principalForInterest ?? t.compensation.totalApproved;
+      const calcDate = getEffectiveCalculationDate(t);
+      const interest = calculateInterestSmart(principalBase, baseDate, calcDate);
+      const supplementary = t.supplementaryAmount || 0;
+      return acc + principalBase + interest + supplementary;
     }, 0);
 
-  const statsDisbursedAmountRaw = statsDisbursedAmountRawFromDisbursed + statsDisbursedAmountRawFromPartial;
-  // Làm tròn tới 2 chữ số thập phân ở kết quả tổng cuối cùng
-  const statsDisbursedAmount = roundTo2(statsDisbursedAmountRaw);
+    const disbursedAmountFromPartial = filteredTransactions
+      .filter(t => getEffectiveStatus(t) !== TransactionStatus.DISBURSED && (t as any).withdrawnAmount)
+      .reduce((acc, t) => acc + ((t as any).withdrawnAmount || 0), 0);
 
-  // Các giao dịch chưa giải ngân hoàn toàn (bao gồm cả PENDING + HOLD sau khi rút 1 phần) tại thời điểm filter
-  const statsPendingTrans = filteredTransactions.filter(t => getEffectiveStatus(t) !== TransactionStatus.DISBURSED);
-  const statsPendingCount = statsPendingTrans.length;
+    const disbursedAmount = roundTo2(disbursedAmountFromFull + disbursedAmountFromPartial);
 
-  const statsPendingAmountRaw = statsPendingTrans.reduce((acc, t) => {
-    const project = projects.find(p => p.id === t.projectId);
-    const baseDate = t.effectiveInterestDate || project?.interestStartDate;
-    // Nếu đã rút 1 phần, chỉ tính trên phần gốc còn lại (principalForInterest)
-    const principalBase = (t as any).principalForInterest ?? t.compensation.totalApproved;
-    
-    // Use effective calculation date (respects filter date)
-    const calcDate = getEffectiveCalculationDate(t);
-    
-    const interest = calculateInterestSmart(principalBase, baseDate, calcDate);
-    const supplementary = t.supplementaryAmount || 0;
-    const transactionTotal = principalBase + interest + supplementary;
-    return acc + transactionTotal;
-  }, 0);
-  // Làm tròn tới 2 chữ số thập phân ở kết quả tổng cuối cùng
-  const statsPendingAmount = roundTo2(statsPendingAmountRaw);
+    const pendingTrans = filteredTransactions.filter(t => getEffectiveStatus(t) !== TransactionStatus.DISBURSED);
 
-  // Tổng lãi phát sinh - Link với tab Giao dịch / tab Số dư
-  // CHỈ tính lãi từ các giao dịch CHƯA giải ngân (PENDING + HOLD) - Lãi tạm tính
-  // Khi giải ngân, lãi của giao dịch đó sẽ được chuyển sang "đã chốt" và không còn trong tổng này
-  let tempInterest = 0; // Lãi tạm tính (chưa giải ngân) - giữ 2 chữ số thập phân
-  let lockedInterest = 0; // Lãi đã chốt (đã giải ngân) - giữ 2 chữ số thập phân
-
-  filteredTransactions.forEach(t => {
-    const project = projects.find(p => p.id === t.projectId);
-    const baseDate = t.effectiveInterestDate || project?.interestStartDate;
-    const principalBase = (t as any).principalForInterest ?? t.compensation.totalApproved;
-    
-    // Use effective status at filter time
-    const effectiveStatus = getEffectiveStatus(t);
-    const calcDate = getEffectiveCalculationDate(t);
-
-    if (effectiveStatus === TransactionStatus.DISBURSED) {
-      // Lãi đã chốt (tại thời điểm filter)
-      const calculatedInterest = calculateInterestSmart(principalBase, baseDate, calcDate);
-      lockedInterest += calculatedInterest;
-    } else {
-      // Lãi tạm tính (chưa giải ngân tại thời điểm filter) – tính trên phần gốc còn lại
-      const tInterest = calculateInterestSmart(principalBase, baseDate, calcDate);
-      tempInterest += tInterest;
-    }
-  });
-
-  const statsTotalInterest = tempInterest; // Chỉ trả về lãi tạm tính (chưa làm tròn)
-  const statsLockedInterest = lockedInterest; // Lãi đã chốt (chưa làm tròn)
-
-  // Calculate breakdown for interest if rate change is configured
-  let interestBeforeTotal = 0;
-  let interestAfterTotal = 0;
-  const hasRateChange = interestRateChangeDate && interestRateBefore !== null && interestRateAfter !== null;
-  
-  if (hasRateChange) {
-    filteredTransactions.forEach(t => {
-      const project = projects.find(p => p.id === t.projectId);
-      const baseDate = t.effectiveInterestDate || project?.interestStartDate;
+    const pendingAmount = roundTo2(pendingTrans.reduce((acc, t) => {
+      const project = resolveProject(t);
+      const baseDate = t.effectiveInterestDate || project?.interestStartDate || (project as any)?.startDate;
       const principalBase = (t as any).principalForInterest ?? t.compensation.totalApproved;
-      
-      // Use effective status at filter time
-      const effectiveStatus = getEffectiveStatus(t);
       const calcDate = getEffectiveCalculationDate(t);
-      
-      if (effectiveStatus !== TransactionStatus.DISBURSED) {
-        // Only calculate cho phần chưa giải ngân (lãi tạm tính) tại thời điểm filter – tính trên phần gốc còn lại
-        const interestResult = calculateInterestWithRateChange(
-          principalBase,
-          baseDate,
-          calcDate,
-          interestRateChangeDate,
-          interestRateBefore,
-          interestRateAfter
-        );
-        interestBeforeTotal += interestResult.interestBefore;
-        interestAfterTotal += interestResult.interestAfter;
+      const interest = calculateInterestSmart(principalBase, baseDate, calcDate);
+      const supplementary = t.supplementaryAmount || 0;
+      return acc + principalBase + interest + supplementary;
+    }, 0));
+
+    let tempInt = 0;
+    let lockedInt = 0;
+    let intBefore = 0;
+    let intAfter = 0;
+    const rateChanged = interestRateChangeDate && interestRateBefore !== null && interestRateAfter !== null;
+
+    filteredTransactions.forEach(t => {
+      const project = resolveProject(t);
+      const baseDate = t.effectiveInterestDate || project?.interestStartDate || (project as any)?.startDate;
+      const principalBase = (t as any).principalForInterest ?? t.compensation.totalApproved;
+      const effStatus = getEffectiveStatus(t);
+      const calcDate = getEffectiveCalculationDate(t);
+      const interest = calculateInterestSmart(principalBase, baseDate, calcDate);
+
+      if (effStatus === TransactionStatus.DISBURSED) {
+        lockedInt += interest;
+      } else {
+        tempInt += interest;
+        if (rateChanged) {
+          const result = calculateInterestWithRateChange(
+            principalBase, baseDate, calcDate,
+            interestRateChangeDate, interestRateBefore, interestRateAfter
+          );
+          intBefore += result.interestBefore;
+          intAfter += result.interestAfter;
+        }
       }
     });
-  }
 
-  // Làm tròn kết quả tổng cho hiển thị (giữ nội bộ 2 chữ số thập phân)
-  const statsTotalInterestRounded = roundTo2(statsTotalInterest);
-  const statsLockedInterestRounded = roundTo2(statsLockedInterest);
-  const interestBeforeTotalRounded = roundTo2(interestBeforeTotal);
-  const interestAfterTotalRounded = roundTo2(interestAfterTotal);
+    return {
+      statsDisbursedTrans: disbursedTrans,
+      statsDisbursedAmount: disbursedAmount,
+      statsPendingCount: pendingTrans.length,
+      statsPendingAmount: pendingAmount,
+      statsTotalInterestRounded: roundTo2(tempInt),
+      statsLockedInterestRounded: roundTo2(lockedInt),
+      interestBeforeTotalRounded: roundTo2(intBefore),
+      interestAfterTotalRounded: roundTo2(intAfter),
+      displayBalance: pendingAmount,
+      statsTotalProjectValue: disbursedAmount + pendingAmount,
+      hasRateChange: rateChanged,
+    };
+  }, [filteredTransactions, getEffectiveStatus, getEffectiveCalculationDate, calculateInterestSmart,
+      resolveProject, interestRateChangeDate, interestRateBefore, interestRateAfter]);
 
-  // Tổng giá trị dự án = statsDisbursedAmount + statsPendingAmount
-  // Using the same calculation as above for consistency
-  const statsTotalProjectValue = statsDisbursedAmount + statsPendingAmount;
-
-  // Dashboard total balance = Tiền chưa GN (gốc + lãi + bổ sung của các giao dịch chưa giải ngân)
-  // This should naturally equal statsPendingAmount
-  const statsTotalAccountBalance = statsPendingAmount;
+  const {
+    statsDisbursedTrans, statsDisbursedAmount, statsPendingCount, statsPendingAmount,
+    statsTotalInterestRounded, statsLockedInterestRounded,
+    interestBeforeTotalRounded, interestAfterTotalRounded,
+    displayBalance, statsTotalProjectValue, hasRateChange
+  } = computedStats;
 
   const projectStats = useMemo(() => {
     return projects.map(project => {
-      const projectTrans = dateFilteredTransactions.filter(t => t.projectId === project.id);
+      const projectTrans = dateFilteredTransactions.filter(t => {
+        const pIdStr = (t.projectId && (t.projectId as any)._id) ? (t.projectId as any)._id.toString() : t.projectId?.toString();
+        return pIdStr === project.id || (project as any)._id === pIdStr;
+      });
 
       const pDisbursed = projectTrans
         .filter(t => getEffectiveStatus(t) === TransactionStatus.DISBURSED)
@@ -308,7 +323,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
           const baseDate = t.effectiveInterestDate || project.interestStartDate;
           const principalBase = (t as any).principalForInterest ?? t.compensation.totalApproved;
           const calcDate = getEffectiveCalculationDate(t);
-          
           const interest = calculateInterestSmart(principalBase, baseDate, calcDate);
           const supplementary = t.supplementaryAmount || 0;
           return acc + principalBase + interest + supplementary;
@@ -318,10 +332,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
         .filter(t => getEffectiveStatus(t) !== TransactionStatus.DISBURSED)
         .reduce((acc, t) => {
           const baseDate = t.effectiveInterestDate || project.interestStartDate;
-          // Nếu đã rút 1 phần, chỉ tính trên phần gốc còn lại (principalForInterest)
           const principalBase = (t as any).principalForInterest ?? t.compensation.totalApproved;
           const calcDate = getEffectiveCalculationDate(t);
-          
           const interest = calculateInterestSmart(principalBase, baseDate, calcDate);
           const supplementary = t.supplementaryAmount || 0;
           return acc + principalBase + interest + supplementary;
@@ -329,17 +341,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
       const pInterestRaw = projectTrans.reduce((acc, t) => {
         const baseDate = t.effectiveInterestDate || project.interestStartDate;
-        // Nếu đã rút 1 phần, chỉ tính trên phần gốc còn lại (principalForInterest)
         const principalBase = (t as any).principalForInterest ?? t.compensation.totalApproved;
         const calcDate = getEffectiveCalculationDate(t);
-        
-        // Tính lãi trên phần gốc còn lại (principalForInterest) với ngày tính hiệu lực
         return acc + calculateInterestSmart(principalBase, baseDate, calcDate);
       }, 0);
 
-      // Làm tròn tổng lãi theo dự án ở bước cuối (2 chữ số thập phân)
       const pInterest = roundTo2(pInterestRaw);
-
       const completionRate = project.totalBudget > 0 ? (pDisbursed / project.totalBudget) * 100 : 0;
 
       return {
@@ -350,12 +357,217 @@ export const Dashboard: React.FC<DashboardProps> = ({
         completionRate: parseFloat(completionRate.toFixed(1))
       };
     });
-  }, [projects, dateFilteredTransactions, interestRate, getEffectiveStatus, getEffectiveCalculationDate]);
+  }, [projects, dateFilteredTransactions, interestRate, getEffectiveStatus, getEffectiveCalculationDate, calculateInterestSmart]);
 
   const chartData = useMemo(() => {
     if (selectedProjectIds.length === 0) return projectStats;
     return projectStats.filter(p => selectedProjectIds.includes(p.id));
   }, [projectStats, selectedProjectIds]);
+
+  const MAX_PROJECTS_CHART = 30;
+  const chartDataDisplay = useMemo(() => chartData.slice(0, MAX_PROJECTS_CHART), [chartData]);
+  const chartHeight = Math.min(800, 280 + chartDataDisplay.length * 20);
+
+  const holdCount = useMemo(() => filteredTransactions.filter(t => getEffectiveStatus(t) === TransactionStatus.HOLD).length, [filteredTransactions, getEffectiveStatus]);
+
+  const donutStatusData = useMemo(() => {
+    const disbursedCount = filteredTransactions.filter(t => getEffectiveStatus(t) === TransactionStatus.DISBURSED).length;
+    const notDisbursedCount = filteredTransactions.filter(t => getEffectiveStatus(t) !== TransactionStatus.DISBURSED).length;
+    return [
+      { name: 'Đã giải ngân', value: statsDisbursedAmount, count: disbursedCount, color: '#005992' },
+      { name: 'Chưa giải ngân', value: statsPendingAmount, count: notDisbursedCount, color: '#94a3b8' },
+    ].filter(d => d.count > 0);
+  }, [filteredTransactions, getEffectiveStatus, statsDisbursedAmount, statsPendingAmount]);
+
+  const disbursementTrendData = useMemo(() => {
+    const year = endDate
+      ? new Date(endDate).getFullYear()
+      : startDate
+        ? new Date(startDate).getFullYear()
+        : new Date().getFullYear();
+    const months = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'T8', 'T9', 'T10', 'T11', 'T12'];
+    return months.map((label, i) => {
+      const month = i + 1;
+      const disbursedInMonth = statsDisbursedTrans.filter(t => {
+        if (!t.disbursementDate) return false;
+        const d = new Date(t.disbursementDate);
+        return d.getMonth() + 1 === month && d.getFullYear() === year;
+      }).reduce((acc, t) => {
+        const proj = resolveProject(t);
+        const base = (t as any).principalForInterest ?? t.compensation?.totalApproved ?? 0;
+        const calcDate = getEffectiveCalculationDate(t);
+        const baseDate = t.effectiveInterestDate || proj?.interestStartDate;
+        const interest = calculateInterestSmart(base, baseDate, calcDate);
+        return acc + base + interest + (t.supplementaryAmount || 0);
+      }, 0);
+      return { thang: label, thucTe: disbursedInMonth, keHoach: 0 };
+    });
+  }, [statsDisbursedTrans, resolveProject, getEffectiveCalculationDate, calculateInterestSmart, startDate, endDate]);
+
+  const balanceTrendData = useMemo(() => {
+    const now = new Date();
+    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+    const getPendingAmountAt = (d: Date): number => {
+      const endTime = d.getTime();
+      let total = 0;
+      for (const t of filteredTransactions) {
+        const disbursedAt = t.disbursementDate ? new Date(t.disbursementDate).getTime() : null;
+        if (disbursedAt !== null && disbursedAt <= endTime) continue;
+        const project = resolveProject(t);
+        const baseDate = t.effectiveInterestDate || project?.interestStartDate || (project as any)?.startDate;
+        if (baseDate && new Date(baseDate).getTime() > endTime) continue;
+        const principalBase = (t as any).principalForInterest ?? t.compensation.totalApproved;
+        const interest = calculateInterestSmart(principalBase, baseDate, d);
+        const supplementary = t.supplementaryAmount || 0;
+        total += principalBase + interest + supplementary;
+      }
+      return total;
+    };
+
+    const soDuAt = (d: Date): number => roundTo2(getPendingAmountAt(d));
+
+    // Determine chart date range
+    let rangeStart: Date;
+    let rangeEnd: Date;
+
+    if (startDate && endDate) {
+      rangeStart = new Date(startDate);
+      rangeEnd = new Date(endDate);
+    } else if (endDate) {
+      rangeEnd = new Date(endDate);
+      rangeStart = new Date(rangeEnd);
+      rangeStart.setDate(rangeEnd.getDate() - 6);
+    } else if (startDate) {
+      rangeStart = new Date(startDate);
+      rangeEnd = new Date(todayEnd);
+    } else {
+      rangeEnd = new Date(todayEnd);
+      rangeStart = new Date(rangeEnd);
+      rangeStart.setDate(rangeEnd.getDate() - 6);
+    }
+
+    rangeStart.setHours(23, 59, 59, 999);
+    rangeEnd.setHours(23, 59, 59, 999);
+
+    if (rangeStart.getTime() > rangeEnd.getTime()) {
+      const tmp = rangeStart;
+      rangeStart = rangeEnd;
+      rangeEnd = tmp;
+    }
+
+    const rangeDays = Math.max(1, Math.ceil((rangeEnd.getTime() - rangeStart.getTime()) / (1000 * 3600 * 24)));
+    const MAX_BALANCE_POINTS = 15;
+    let stepDays = 1;
+    if (rangeDays > 31) stepDays = 7;
+    if (rangeDays > 180) stepDays = 30;
+    if (Math.ceil(rangeDays / stepDays) > MAX_BALANCE_POINTS) {
+      stepDays = Math.ceil(rangeDays / MAX_BALANCE_POINTS);
+    }
+
+    const result: { ngay: string; soDu: number }[] = [];
+    const cursor = new Date(rangeStart);
+    while (cursor.getTime() <= rangeEnd.getTime()) {
+      const d = new Date(cursor);
+      d.setHours(23, 59, 59, 999);
+      const label = rangeDays > 180
+        ? `${d.getMonth() + 1}/${d.getFullYear()}`
+        : `${d.getDate()}/${d.getMonth() + 1}`;
+      result.push({ ngay: label, soDu: soDuAt(d) });
+      cursor.setDate(cursor.getDate() + stepDays);
+    }
+
+    // Ensure last point is always the range end
+    const lastEntry = result[result.length - 1];
+    const endLabel = rangeDays > 180
+      ? `${rangeEnd.getMonth() + 1}/${rangeEnd.getFullYear()}`
+      : `${rangeEnd.getDate()}/${rangeEnd.getMonth() + 1}`;
+    if (!lastEntry || lastEntry.ngay !== endLabel) {
+      result.push({ ngay: endLabel, soDu: soDuAt(rangeEnd) });
+    }
+
+    return result;
+  }, [filteredTransactions, resolveProject, calculateInterestSmart, startDate, endDate]);
+
+  const paymentListForTable = useMemo(() => {
+    const rawTerms = pendingSearch
+      .split(/[,:\uFF0C]/)
+      .map(t => t.trim())
+      .filter(t => t.length > 0);
+
+    const mapped = filteredTransactions.map(t => {
+      const proj = projects.find(p => p.id === t.projectId || (p as any)._id === t.projectId);
+      const effectiveStatus = getEffectiveStatus(t);
+      const principalBase = (t as any).principalForInterest ?? t.compensation?.totalApproved ?? 0;
+      const baseDate = t.effectiveInterestDate || proj?.interestStartDate;
+      const calcDate = getEffectiveCalculationDate(t);
+      const laiPhatSinh = calculateInterestSmart(principalBase, baseDate, calcDate);
+      const supplementary = t.supplementaryAmount || 0;
+      const totalAvailable = principalBase + laiPhatSinh + supplementary;
+      const tongChiTra = (t as any).withdrawnAmount
+        ? (t as any).withdrawnAmount
+        : effectiveStatus === TransactionStatus.DISBURSED && (t as any).disbursedTotal
+          ? (t as any).disbursedTotal
+          : totalAvailable;
+      const ngayGN = effectiveStatus === TransactionStatus.DISBURSED && t.disbursementDate
+        ? formatDate(t.disbursementDate)
+        : baseDate ? formatDate(baseDate) : '-';
+      return { t, proj, effectiveStatus, ngayGN, laiPhatSinh, tongChiTra };
+    });
+
+    if (rawTerms.length === 0) return mapped;
+
+    const formatAmountForSearch = (amount: number) => Math.round(amount).toString().replace(/\s/g, '');
+
+    return mapped.filter(row => {
+      return rawTerms.every(termRaw => {
+        const term = termRaw.toLowerCase();
+        const numericTerm = termRaw.replace(/[,.\s]/g, '');
+        const totalApprovedStr = formatAmountForSearch(row.t.compensation?.totalApproved ?? 0);
+        const interestStr = formatAmountForSearch(row.laiPhatSinh);
+        const totalStr = formatAmountForSearch(row.tongChiTra);
+        const supplementaryStr = formatAmountForSearch(row.t.supplementaryAmount || 0);
+        const relevantDate = row.t.effectiveInterestDate || row.proj?.interestStartDate;
+        const displayDateStr = relevantDate ? formatDate(relevantDate) : '';
+
+        return (
+          row.effectiveStatus.toLowerCase().includes(term) ||
+          (row.t.household?.name || '').toLowerCase().includes(term) ||
+          (row.t.household?.id || '').toLowerCase().includes(term) ||
+          (row.t.household?.cccd || '').includes(termRaw) ||
+          (row.t.household?.decisionNumber || '').toLowerCase().includes(term) ||
+          (row.t.id || '').toLowerCase().includes(term) ||
+          displayDateStr.includes(termRaw) ||
+          row.ngayGN.includes(termRaw) ||
+          (row.t.paymentType || '').toLowerCase().includes(term) ||
+          (row.proj?.code || '').toLowerCase().includes(term) ||
+          totalApprovedStr.includes(numericTerm) ||
+          interestStr.includes(numericTerm) ||
+          totalStr.includes(numericTerm) ||
+          supplementaryStr.includes(numericTerm)
+        );
+      });
+    });
+  }, [filteredTransactions, pendingSearch, projects, getEffectiveStatus, getEffectiveCalculationDate, calculateInterestSmart]);
+
+  const PAYMENT_LIST_PAGE_SIZE = 20;
+  const paymentListPaginated = useMemo(
+    () => paymentListForTable.slice(paymentListPage * PAYMENT_LIST_PAGE_SIZE, paymentListPage * PAYMENT_LIST_PAGE_SIZE + PAYMENT_LIST_PAGE_SIZE),
+    [paymentListForTable, paymentListPage]
+  );
+  const paymentListTotalPages = Math.ceil(paymentListForTable.length / PAYMENT_LIST_PAGE_SIZE) || 1;
+
+  const handleDownloadPaymentList = () => {
+    exportTransactionsToExcel(
+      filteredTransactions,
+      projects,
+      interestRate,
+      interestRateChangeDate ?? null,
+      interestRateBefore ?? null,
+      interestRateAfter ?? null,
+      endDate || null
+    );
+  };
 
   const toggleProjectSelection = (id: string) => {
     setSelectedProjectIds(prev =>
@@ -363,38 +575,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
     );
   };
 
-  // Đảm bảo chart container có kích thước trước khi render
-  useEffect(() => {
-    const updateDimensions = () => {
-      if (chartContainerRef.current) {
-        const { width, height } = chartContainerRef.current.getBoundingClientRect();
-        if (width > 0 && height > 0) {
-          setChartDimensions({ width, height });
-        }
-      }
-    };
-
-    updateDimensions();
-    window.addEventListener('resize', updateDimensions);
-    const timer = setTimeout(updateDimensions, 100); // Delay để đảm bảo DOM đã render
-
-    return () => {
-      window.removeEventListener('resize', updateDimensions);
-      clearTimeout(timer);
-    };
-  }, [selectedProjectIds, chartData]);
-
   const KPICard = ({ title, value, subValue, icon: Icon, colorClass }: any) => (
     <GlassCard hoverEffect className="relative flex flex-col justify-between h-full min-h-[120px] shadow-sm border-slate-200">
       <div className="flex justify-between items-center mb-2">
-        <h3 className="text-xs font-bold text-black uppercase tracking-widest">{title}</h3>
+        <h3 className="text-base font-bold text-[#0f172a]">{title}</h3>
         <div className={`p-2 rounded-lg ${colorClass} bg-opacity-10 border border-current opacity-80`}>
           <Icon size={18} className={colorClass.replace('bg-', 'text-')} strokeWidth={2} />
         </div>
       </div>
       <div>
         <div className="flex items-center gap-2">
-          <p className="text-xl font-semibold text-black tracking-tight">{value}</p>
+          <p className="text-xl font-semibold text-[#0f172a] tracking-tight">{value}</p>
         </div>
         {subValue && (
           typeof subValue === 'string' ? (
@@ -407,6 +598,22 @@ export const Dashboard: React.FC<DashboardProps> = ({
     </GlassCard>
   );
 
+  const quickActionsAll = [
+    { id: 'dashboard', icon: LayoutDashboard, label: 'Trang chủ', color: 'bg-blue-500' },
+    { id: 'projects', icon: FolderKanban, label: 'Dự án', color: 'bg-indigo-500' },
+    { id: 'transactions', icon: Users, label: 'Giao dịch', color: 'bg-cyan-500' },
+    { id: 'balance', icon: Landmark, label: 'Số dư', color: 'bg-teal-500' },
+    { id: 'interestCalc', icon: Calculator, label: 'Tính lãi', color: 'bg-emerald-500' },
+    { id: 'admin', icon: ShieldCheck, label: 'Admin', color: 'bg-slate-600' },
+  ];
+  const quickActions = quickActionsAll.filter((action) => {
+    if (currentUser.role === 'Admin' || currentUser.role === 'SuperAdmin') return true;
+    if (action.id === 'balance') return currentUser.permissions?.includes('transactions') || currentUser.permissions?.includes('balance');
+    if (action.id === 'interestCalc') return currentUser.permissions?.includes('transactions') || currentUser.permissions?.includes('balance') || currentUser.permissions?.includes('interestCalc');
+    if (action.id === 'admin') return false;
+    return currentUser.permissions?.includes(action.id);
+  });
+
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       const project = projects.find(p => p.code === label);
@@ -415,7 +622,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       return (
         <div className="bg-white/95 backdrop-blur-xl p-3 rounded-lg shadow-xl border border-slate-200 text-xs z-50">
           <p className="font-bold text-black mb-2 pb-1 border-b border-slate-200 max-w-[200px] truncate">{title}</p>
-          {payload.map((entry, index) => (
+          {payload.map((entry: any, index: number) => (
             <div key={index} className="flex justify-between gap-6 mb-1.5 last:mb-0 items-center">
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-sm" style={{ backgroundColor: entry.color }} />
@@ -436,45 +643,55 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   const isDetailedView = selectedProjectIds.length > 0;
 
+  const VN_BLUE = '#005992';
+  const VN_BLUE_LIGHT = '#0ea5e9';
+
   return (
     <div className="space-y-6 animate-fade-in pb-12">
-      <div className="flex flex-col gap-3 pb-2">
-        <div className="flex justify-between items-end">
-          <div>
-            <h2 className="text-2xl font-medium text-black tracking-tight">Dashboard</h2>
-            <p className="text-sm font-medium text-slate-500 mt-1">Tổng quan tài chính & tiến độ</p>
+      {/* Header */}
+      <div className="pb-4 border-b-2 border-slate-300">
+        <div className="flex flex-wrap justify-between items-end gap-4">
+          <h2 className="text-2xl font-bold text-[#0f172a] tracking-tight">Trang chủ</h2>
+          <div className="text-right">
+            <p className="text-xs font-medium text-slate-500">{endDate ? 'Tổng dư tại mốc đến ngày (VND)' : 'Tổng dư hiện có (VND)'}</p>
+            <p className="text-2xl font-bold" style={{ color: VN_BLUE }}>{formatCurrency(displayBalance)}</p>
           </div>
         </div>
+      </div>
 
-        <div className="flex flex-wrap items-end gap-3 justify-end w-full">
-          <div className="flex flex-col">
-            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Từ ngày</label>
+      {/* Bộ lọc */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
+        <h3 className="text-base font-bold text-[#0f172a]">Bộ lọc</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Từ ngày</label>
             <input
               type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-black shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={inputStartDate}
+              onChange={(e) => setInputStartDate(e.target.value)}
+              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
             />
           </div>
-          <div className="flex flex-col">
-            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Đến ngày</label>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">Đến ngày</label>
             <input
               type="date"
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-black shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={inputEndDate}
+              onChange={(e) => setInputEndDate(e.target.value)}
+              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
             />
           </div>
-          <div className="flex items-center gap-2 text-xs font-medium text-slate-600">
-            <span className="px-2 py-1 rounded-full bg-slate-100 border border-slate-200">
-              Đang lọc: {formattedStart} → {formattedEnd}
-            </span>
-            <span className="text-slate-500">({filteredTransactions.length} giao dịch khớp)</span>
-          </div>
-          {(startDate || endDate) && (
+        </div>
+        <div className="flex flex-wrap items-center gap-3 mt-4 pt-4 border-t border-slate-100">
+          <span className="text-xs text-slate-500">Đang lọc: {formattedStart} → {formattedEnd}</span>
+          <span className="text-xs text-slate-500">{filteredTransactions.length} giao dịch khớp</span>
+          {(inputStartDate !== startDate || inputEndDate !== endDate) && (
+            <span className="text-xs text-amber-600 animate-pulse">Đang cập nhật...</span>
+          )}
+          {(inputStartDate || inputEndDate) && (
             <button
-              onClick={() => { setStartDate(''); setEndDate(''); }}
-              className="px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-semibold text-slate-700 hover:bg-slate-50 shadow-sm"
+              onClick={() => { setInputStartDate(''); setInputEndDate(''); setStartDate(''); setEndDate(''); }}
+              className="text-sm font-medium text-blue-600 hover:text-blue-700"
             >
               Xóa lọc
             </button>
@@ -482,271 +699,316 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPICard
-          title="TỔNG TIỀN TÀI KHOẢN"
-          value={formatCurrency(statsTotalAccountBalance)}
-          subValue="Đã bao gồm lãi tạm tính"
-          icon={Wallet}
-          colorClass="bg-blue-600 text-blue-600"
-        />
-        <KPICard
-          title="TỔNG SỐ DỰ ÁN"
-          value={statsTotalProjects}
-          subValue={isDetailedView ? "Đang chọn" : "Đang quản lý"}
-          icon={Layers}
-          colorClass="bg-teal-600 text-teal-600"
-        />
-        <KPICard
-          title="TỔNG GIÁ TRỊ DỰ ÁN"
-          value={formatCurrency(statsTotalProjectValue)}
-          subValue="Vốn đầu tư"
-          icon={TrendingUp}
-          colorClass="bg-purple-600 text-purple-600"
-        />
-        <KPICard
-          title="TỔNG SỐ HỘ DÂN"
-          value={statsTotalHouseholds}
-          subValue="Hồ sơ hệ thống"
-          icon={Users}
-          colorClass="bg-sky-600 text-sky-600"
-        />
-        <KPICard
-          title="HỘ DÂN CHƯA NHẬN"
-          value={statsPendingCount}
-          subValue="Hồ sơ tồn"
-          icon={UserX}
-          colorClass="bg-orange-600 text-orange-600"
-        />
-        <KPICard
-          title="ĐÃ GIẢI NGÂN"
-          value={formatCurrency(statsDisbursedAmount)}
-          subValue="Đã bao gồm lãi"
-          icon={CheckCircle}
-          colorClass="bg-emerald-600 text-emerald-600"
-        />
-        <KPICard
-          title="CHƯA GIẢI NGÂN"
-          value={formatCurrency(statsPendingAmount)}
-          subValue="Đã bao gồm lãi tạm tính"
-          icon={AlertCircle}
-          colorClass="bg-amber-600 text-amber-600"
-        />
-        <KPICard
-          title="LÃI PHÁT SINH"
-          value={formatCurrency(statsTotalInterestRounded)}
-          subValue={
-            hasRateChange ? (
-              <>
-                <div>Trước {interestRateChangeDate ? formatDate(interestRateChangeDate) : '01/01/2026'} ({interestRateBefore}%): {formatCurrency(interestBeforeTotalRounded)}</div>
-                <div>Từ {interestRateChangeDate ? formatDate(interestRateChangeDate) : '01/01/2026'} ({interestRateAfter}%): {formatCurrency(interestAfterTotalRounded)}</div>
-                {statsLockedInterestRounded > 0 && (
-                  <div className="mt-1 pt-1 border-t border-slate-300">
-                    Đã chốt: {formatCurrency(statsLockedInterestRounded)}
-                  </div>
-                )}
-              </>
-            ) : (
-              statsLockedInterestRounded > 0
-                ? `Đã chốt: ${formatCurrency(statsLockedInterestRounded)}`
-                : `Lãi suất: ${interestRate}%`
-            )
-          }
-          icon={PiggyBank}
-          colorClass="bg-rose-600 text-rose-600"
-        />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" style={{ minHeight: '550px', height: '550px' }}>
-        <GlassCard className="lg:col-span-2 flex flex-col p-6 border-slate-200" style={{ height: '100%', minHeight: '550px' }}>
-          <div className="flex justify-between items-center mb-6" style={{ flexShrink: 0 }}>
+      {/* Tài khoản thanh toán | Biến động số dư */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+          <h3 className="text-base font-bold text-[#0f172a] mb-1">Tài khoản thanh toán</h3>
+          <p className="text-xs text-slate-500 mb-4">Hiện có 1 tài khoản</p>
+          <div className="flex items-center justify-between py-3 border-b border-slate-100">
             <div>
-              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-widest">Tiến độ & Phân bổ vốn</h3>
-              <p className="text-xs font-medium text-slate-500 mt-1">
-                {isDetailedView
-                  ? `Chi tiết ${selectedProjectIds.length} dự án được chọn`
-                  : "Tổng quan toàn bộ hệ thống"}
-              </p>
+              <p className="text-xs text-slate-500">Tài khoản chính</p>
+              <p className="text-lg font-semibold text-[#0f172a]">{formatCurrency(displayBalance)} VND</p>
             </div>
-            {isDetailedView && (
-              <button
-                onClick={() => setSelectedProjectIds([])}
-                className="text-xs font-semibold text-red-600 hover:text-red-700 bg-red-50 px-3 py-1.5 rounded-lg transition-colors border border-red-200"
-              >
-                Xóa bộ lọc
-              </button>
-            )}
-          </div>
-          <div
-            ref={chartContainerRef}
-            className="flex-1 w-full"
-            style={{
-              height: '450px',
-              width: '100%',
-              position: 'relative',
-              flexShrink: 0,
-              minHeight: '400px',
-              minWidth: '300px'
-            }}
-          >
-            {chartDimensions.width > 0 && chartDimensions.height > 0 ? (
-              <ResponsiveContainer width={chartDimensions.width} height={chartDimensions.height}>
-                <ComposedChart
-                  data={chartData}
-                  margin={{ top: 10, right: 10, bottom: 0, left: 10 }}
-                  barGap={2}
-                >
-                  <CartesianGrid stroke="#cbd5e1" vertical={false} strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="code"
-                    scale="band"
-                    tick={{ fontSize: 11, fontWeight: 500, fill: '#0f172a' }}
-                    interval={0}
-                    axisLine={false}
-                    tickLine={false}
-                    tickMargin={12}
-                  />
-                  <YAxis
-                    yAxisId="left"
-                    orientation="left"
-                    tickFormatter={(value) => new Intl.NumberFormat('en-US', { notation: "compact", compactDisplay: "short" }).format(value)}
-                    tick={{ fontSize: 11, fontWeight: 500, fill: '#475569' }}
-                    axisLine={false}
-                    tickLine={false}
-                    label={{ value: 'Vốn (VND)', angle: -90, position: 'insideLeft', style: { fill: '#64748b', fontSize: 10, fontWeight: 600 } }}
-                  />
-                  <YAxis
-                    yAxisId="right"
-                    orientation="right"
-                    unit="%"
-                    tick={{ fontSize: 11, fontWeight: 500, fill: '#2563eb' }}
-                    axisLine={false}
-                    tickLine={false}
-                    label={{ value: '% Hoàn thành', angle: 90, position: 'insideRight', style: { fill: '#2563eb', fontSize: 10, fontWeight: 600 } }}
-                  />
-                  <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.04)' }} />
-                  <Legend
-                    iconType="circle"
-                    wrapperStyle={{ fontSize: '11px', fontWeight: 600, paddingTop: '16px', color: '#334155' }}
-                  />
-
-                  <Bar
-                    yAxisId="left"
-                    dataKey="totalBudget"
-                    name="Tổng vốn"
-                    fill="#3b82f6"
-                    radius={[3, 3, 0, 0]}
-                    barSize={isDetailedView ? undefined : 24}
-                  />
-
-                  {isDetailedView && (
-                    <>
-                      <Bar
-                        yAxisId="left"
-                        dataKey="disbursedAmount"
-                        name="Đã giải ngân"
-                        fill="#10b981"
-                        radius={[3, 3, 0, 0]}
-                      />
-                      <Bar
-                        yAxisId="left"
-                        dataKey="pendingAmount"
-                        name="Chưa giải ngân"
-                        fill="#f59e0b"
-                        radius={[3, 3, 0, 0]}
-                      />
-                      <Bar
-                        yAxisId="left"
-                        dataKey="interestAmount"
-                        name="Lãi phát sinh (Hold)"
-                        fill="#f43f5e"
-                        radius={[3, 3, 0, 0]}
-                      />
-                    </>
-                  )}
-
-                  <Line
-                    yAxisId="right"
-                    type="monotone"
-                    dataKey="completionRate"
-                    name="% Tỷ lệ hoàn thành"
-                    unit="%"
-                    stroke="#2563eb"
-                    strokeWidth={2.5}
-                    dot={{ r: 4, strokeWidth: 1.5, fill: '#fff', stroke: '#2563eb' }}
-                    activeDot={{ r: 6, strokeWidth: 0 }}
-                  />
-                </ComposedChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <p className="text-sm text-slate-500">Đang tải biểu đồ...</p>
-              </div>
-            )}
-          </div>
-        </GlassCard>
-
-        <GlassCard className="flex flex-col overflow-hidden p-0 border-slate-200">
-          <div className="p-5 border-b border-slate-200 bg-white/50 flex justify-between items-center backdrop-blur-md">
-            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-widest">Dự án</h3>
-            <button
-              onClick={() => setActiveTab('projects')}
-              className="text-[10px] font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors bg-blue-50 border border-blue-100 px-2.5 py-1 rounded-full"
-            >
-              Tất cả <ChevronRight size={12} />
+            <button onClick={() => onOpenBalanceModal()} className="text-sm font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1">
+              Chi tiết <ChevronRight size={16} />
             </button>
           </div>
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+          <h3 className="text-base font-bold text-[#0f172a] mb-3">Biến động số dư</h3>
+          <ResponsiveContainer width="100%" height={180}>
+            <AreaChart data={balanceTrendData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="fillSoDu" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={VN_BLUE_LIGHT} stopOpacity={0.35} />
+                  <stop offset="100%" stopColor={VN_BLUE_LIGHT} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+              <XAxis dataKey="ngay" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+              <YAxis
+                tickFormatter={(v) => (v >= 1e9 ? `${(v / 1e9).toFixed(1)} tỷ` : v >= 1e6 ? `${(v / 1e6).toFixed(0)} tr` : `${(v / 1e3).toFixed(0)}K`)}
+                tick={{ fontSize: 12, fill: '#334155', fontWeight: 600 }}
+                axisLine={false}
+                tickLine={false}
+                width={56}
+              />
+              <Tooltip formatter={(v: number) => [formatCurrency(v), 'Số dư']} />
+              <Area type="monotone" dataKey="soDu" stroke={VN_BLUE} strokeWidth={2} fill="url(#fillSoDu)" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
 
-          <div className="overflow-y-auto flex-1 custom-scrollbar p-2">
-            <table className="w-full border-collapse border border-slate-200 rounded-lg overflow-hidden">
-              <thead className="text-[11px] text-black font-bold uppercase sticky top-0 bg-slate-50/95 backdrop-blur-md z-10 shadow-sm border-b border-slate-200">
-                <tr>
-                  <th className="p-3 w-10 text-center border-r border-slate-200">#</th>
-                  <th className="p-3 text-center border-r border-slate-200">Dự án</th>
-                  <th className="p-3 text-center border-r border-slate-200">Giá trị dự án</th>
-                  <th className="p-3 w-16 text-center">%</th>
-                </tr>
-              </thead>
-              <tbody className="text-sm divide-y divide-slate-200">
-                {projectStats.map((project, index) => (
-                  <tr
-                    key={project.id}
-                    className={`
-                        group transition-all cursor-pointer rounded-lg
-                        ${selectedProjectIds.includes(project.id) ? 'bg-blue-50' : 'hover:bg-slate-50'}
-                      `}
-                    onClick={() => toggleProjectSelection(project.id)}
+      {/* Thống kê tổng quan */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+        <h3 className="text-base font-bold text-[#0f172a]">Thống kê tổng quan</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-4">
+          {[
+            { icon: FolderKanban, label: 'Tổng dự án', value: statsTotalProjects, color: 'bg-blue-100 text-blue-600' },
+            { icon: Layers, label: 'Tổng giá trị dự án', value: formatCurrency(statsTotalProjectValueUploaded), color: 'bg-indigo-100 text-indigo-600' },
+            { icon: Wallet, label: 'Tiền đã giải ngân', value: formatCurrency(statsDisbursedAmount), color: 'bg-purple-100 text-purple-600' },
+            { icon: Landmark, label: endDate ? 'Tiền chưa giải ngân (mốc đến ngày)' : 'Số dư ngân hàng', value: formatCurrency(displayBalance), color: 'bg-emerald-100 text-emerald-600' },
+            { icon: Clock, label: 'Chưa giải ngân', value: statsPendingCount, color: 'bg-slate-100 text-slate-600' },
+            { icon: CheckCircle, label: 'Đã giải ngân', value: statsDisbursedTrans.length, color: 'bg-green-100 text-green-600' },
+            { icon: PiggyBank, label: 'Tổng lãi', value: formatCurrency(statsTotalInterestRounded), color: 'bg-amber-100 text-amber-600' },
+          ].map((k, i) => (
+            <div key={i} className="flex flex-col items-center text-center p-4 rounded-xl bg-slate-50/50 hover:bg-slate-50 transition-colors min-h-[100px] justify-center">
+              <div className={`w-11 h-11 rounded-full flex items-center justify-center mb-2 ${k.color}`}>
+                <k.icon size={22} strokeWidth={2} />
+              </div>
+              <p className="text-xs font-medium text-slate-600 mb-1">{k.label}</p>
+              <p className="text-sm font-bold text-[#0f172a] truncate w-full">{k.value}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Trạng thái giao dịch | Biến động giải ngân */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+          <h3 className="text-base font-bold text-[#0f172a] mb-4">Trạng thái giao dịch</h3>
+          <div className="flex justify-center">
+            <div className="flex flex-col sm:flex-row items-center gap-4">
+              <ResponsiveContainer width={200} height={200}>
+                <PieChart>
+                  <Pie
+                    data={donutStatusData.length ? donutStatusData : [{ name: 'Không có dữ liệu', value: 1, color: '#e2e8f0' }]}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={55}
+                    outerRadius={80}
+                    paddingAngle={2}
+                    dataKey="value"
+                    nameKey="name"
                   >
-                    <td className="p-3 text-center border-r border-slate-200">
-                      <div className={`
-                         w-4 h-4 rounded border flex items-center justify-center transition-all mx-auto
-                         ${selectedProjectIds.includes(project.id) ? 'bg-blue-600 border-blue-600' : 'border-slate-200 bg-white group-hover:border-blue-400'}
-                       `}>
-                        {selectedProjectIds.includes(project.id) && <Check size={10} className="text-white" strokeWidth={3} />}
+                    {(donutStatusData.length ? donutStatusData : [{ name: '', value: 1, color: '#e2e8f0' }]).map((entry, i) => (
+                      <Cell key={i} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(v: number) => [formatCurrency(v), '']} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="flex flex-col gap-3">
+                {(() => {
+                  const total = donutStatusData.reduce((s, d) => s + d.value, 0);
+                  return donutStatusData.map((d) => {
+                    const pct = total > 0 ? ((d.value / total) * 100).toFixed(1) : '0';
+                    return (
+                      <div key={d.name} className="flex items-start gap-2">
+                        <span className="w-3 h-3 rounded-full flex-shrink-0 mt-1" style={{ background: d.color }} />
+                        <div>
+                          <span className="text-sm font-medium text-slate-800 block">{d.name} ({pct}%)</span>
+                          <span className="text-xs font-bold text-slate-900 block">{formatCurrency(d.value)}</span>
+                          <span className="text-[11px] text-slate-500">{d.count} hộ</span>
+                        </div>
                       </div>
-                    </td>
-                    <td className="p-3 text-center border-r border-slate-200">
-                      <p className={`font-semibold text-[13px] text-black truncate mx-auto max-w-[160px] ${selectedProjectIds.includes(project.id) ? 'text-blue-800' : ''}`} title={project.name}>{project.name}</p>
-                      <p className="text-[10px] font-medium text-slate-500 truncate mx-auto max-w-[160px]">{project.code}</p>
-                    </td>
-                    <td className="p-3 text-center font-medium text-[12px] text-black border-r border-slate-200">
-                      {formatCurrency(project.totalBudget)}
-                    </td>
-                    <td className="p-3 text-center">
-                      <span className={`text-[11px] font-bold ${project.completionRate === 100 ? 'text-emerald-600' : 'text-slate-600'}`}>
-                        {project.completionRate}%
+                    );
+                  });
+                })()}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+          <h3 className="text-base font-bold text-[#0f172a] mb-4">Biến động giải ngân</h3>
+          <ResponsiveContainer width="100%" height={220}>
+            <AreaChart data={disbursementTrendData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="fillThucTe" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={VN_BLUE_LIGHT} stopOpacity={0.4} />
+                  <stop offset="100%" stopColor={VN_BLUE_LIGHT} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+              <XAxis dataKey="thang" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+              <YAxis tickFormatter={(v) => `${(v / 1e9).toFixed(0)} Tỷ`} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} width={40} />
+              <Tooltip formatter={(v: number) => [formatCurrency(v), 'Thực tế']} labelFormatter={(l) => l} />
+              <Area type="monotone" dataKey="thucTe" name="Thực tế giải ngân" stroke={VN_BLUE} strokeWidth={2} fill="url(#fillThucTe)" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Tab */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-base font-bold text-[#0f172a]">Tab</h3>
+          <span className="text-xs text-slate-500">Tuỳ chỉnh</span>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-x-12 gap-y-6 justify-items-center">
+          {quickActions.map((action) => (
+            <button
+              key={action.id}
+              onClick={() => {
+                if (action.id === 'balance') return onOpenBalanceModal();
+                if (action.id === 'interestCalc') return onOpenInterestCalcModal();
+                return setActiveTab(action.id);
+              }}
+              className="flex flex-col items-center gap-3 group"
+            >
+              <div className="w-16 h-16 rounded-full flex items-center justify-center text-white shadow-md group-hover:scale-105 transition-transform" style={{ background: VN_BLUE }}>
+                <action.icon size={28} strokeWidth={2} />
+              </div>
+              <span className="text-sm font-medium text-[#0f172a] text-center max-w-[100px]">{action.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Danh sách chi trả */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 overflow-hidden">
+        <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
+          <h3 className="text-base font-bold text-[#0f172a]">Danh sách chi trả</h3>
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Tìm theo Tên, Mã GD, Số QĐ, Số tiền... (dấu , để thêm điều kiện)"
+                value={pendingSearch}
+                onChange={(e) => { setPendingSearch(e.target.value); setPaymentListPage(0); }}
+                className="pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm w-80 focus:outline-none focus:ring-2 focus:ring-blue-400"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={handleDownloadPaymentList}
+              className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-blue-600 transition-colors"
+              title="Tải xuống Excel (toàn bộ danh sách)"
+            >
+              <Download size={18} />
+            </button>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm border-collapse text-center">
+            <thead>
+              <tr className="border-b border-slate-200 bg-slate-50 divide-x divide-slate-200">
+                <th className="text-[10px] font-bold text-black uppercase tracking-wide py-3 px-2 text-center whitespace-nowrap">STT</th>
+                <th className="text-[10px] font-bold text-black uppercase tracking-wide py-3 px-2 text-center whitespace-nowrap">Mã GD</th>
+                <th className="text-[10px] font-bold text-black uppercase tracking-wide py-3 px-2 text-center whitespace-nowrap">Mã hộ dân</th>
+                <th className="text-[10px] font-bold text-black uppercase tracking-wide py-3 px-2 text-center whitespace-nowrap">Mã dự án</th>
+                <th className="text-[10px] font-bold text-black uppercase tracking-wide py-3 px-2 text-center whitespace-nowrap">Họ và tên</th>
+                <th className="text-[10px] font-bold text-black uppercase tracking-wide py-3 px-2 text-center whitespace-nowrap">Loại chi trả</th>
+                <th className="text-[10px] font-bold text-black uppercase tracking-wide py-3 px-2 text-center whitespace-nowrap">Số quyết định</th>
+                <th className="text-[10px] font-bold text-black uppercase tracking-wide py-3 px-2 text-center whitespace-nowrap">Ngày giải ngân</th>
+                <th className="text-[10px] font-bold text-black uppercase tracking-wide py-3 px-2 text-center whitespace-nowrap">Lãi phát sinh</th>
+                <th className="text-[10px] font-bold text-black uppercase tracking-wide py-3 px-2 text-center whitespace-nowrap">Tổng chi trả</th>
+                <th className="text-[10px] font-bold text-black uppercase tracking-wide py-3 px-2 text-center whitespace-nowrap">Trạng thái</th>
+              </tr>
+            </thead>
+            <tbody className="text-sm">
+              {paymentListPaginated.length === 0 ? (
+                <tr><td colSpan={11} className="py-8 text-center text-slate-500">Không có dữ liệu chi trả</td></tr>
+              ) : (
+                paymentListPaginated.map((row, idx) => (
+                  <tr key={row.t.id} className="border-b border-slate-100 hover:bg-slate-50 divide-x divide-slate-100">
+                    <td className="py-2 px-2 text-center font-medium text-slate-600">{paymentListPage * PAYMENT_LIST_PAGE_SIZE + idx + 1}</td>
+                    <td className="py-2 px-2 text-center font-medium text-blue-600 text-xs">{row.t.id}</td>
+                    <td className="py-2 px-2 text-center font-mono text-xs text-slate-600">{row.t.household?.id ?? '-'}</td>
+                    <td className="py-2 px-2 text-center"><span className="text-xs font-semibold bg-blue-50 px-1.5 py-0.5 rounded text-blue-700">{row.proj?.code ?? '-'}</span></td>
+                    <td className="py-2 px-2 text-center font-medium text-slate-800">{row.t.household?.name ?? '-'}</td>
+                    <td className="py-2 px-2 text-center text-xs text-slate-600">{row.t.paymentType || '-'}</td>
+                    <td className="py-2 px-2 text-center text-xs font-medium text-slate-700">{row.t.household?.decisionNumber ?? '-'}</td>
+                    <td className="py-2 px-2 text-center text-xs text-slate-600">{row.ngayGN}</td>
+                    <td className="py-2 px-2 text-center font-medium text-rose-600">{row.laiPhatSinh > 0 ? formatCurrency(row.laiPhatSinh) : '-'}</td>
+                    <td className="py-2 px-2 text-center font-bold text-[#0f172a]">{formatCurrency(row.tongChiTra)}</td>
+                    <td className="py-2 px-2 text-center">
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded ${row.effectiveStatus === TransactionStatus.DISBURSED ? 'text-green-700 font-bold' : row.effectiveStatus === TransactionStatus.HOLD ? 'bg-blue-100 text-blue-700' : 'text-[#005992] font-bold'}`}>
+                        {row.effectiveStatus}
                       </span>
                     </td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
+          {filteredTransactions.length > 0 && (
+            <button onClick={() => setActiveTab('transactions')} className="text-sm font-semibold text-blue-600 hover:text-blue-700">Xem tất cả giao dịch <ChevronRight size={14} className="inline" /></button>
+          )}
+          {paymentListTotalPages > 1 && (
+            <div className="flex items-center gap-2 ml-auto">
+              <button
+                type="button"
+                onClick={() => setPaymentListPage((p) => Math.max(0, p - 1))}
+                disabled={paymentListPage === 0}
+                className="px-3 py-1.5 text-sm font-medium border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700"
+              >
+                Trang trước
+              </button>
+              <span className="text-sm text-slate-500 min-w-[80px] text-center">
+                Trang {paymentListPage + 1} / {paymentListTotalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPaymentListPage((p) => Math.min(paymentListTotalPages - 1, p + 1))}
+                disabled={paymentListPage >= paymentListTotalPages - 1}
+                className="px-3 py-1.5 text-sm font-medium border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700"
+              >
+                Trang sau
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
 
-          <div className="p-3 bg-white/80 border-t border-slate-200 text-[10px] font-medium text-slate-600 text-center backdrop-blur-sm">
-            Đã chọn <span className="font-bold text-blue-700">{selectedProjectIds.length}</span> dự án
-          </div>
-        </GlassCard>
+      {/* So sánh quy mô | Cơ cấu dòng tiền */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+          <h3 className="text-base font-bold text-[#0f172a] mb-4">So sánh quy mô và tiến độ dự án</h3>
+          <ResponsiveContainer width="100%" height={chartHeight}>
+            <BarChart data={chartDataDisplay} layout="vertical" margin={{ top: 8, right: 24, left: 60, bottom: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
+              <XAxis type="number" tickFormatter={(v) => `${(v / 1e9).toFixed(0)} Tỷ`} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="code" width={56} tick={{ fontSize: 11, fill: '#0f172a' }} axisLine={false} tickLine={false} />
+              <Tooltip formatter={(v: number) => [formatCurrency(v), '']} labelFormatter={(l) => chartDataDisplay.find(p => p.code === l)?.name || l} />
+              <Legend />
+              <Bar dataKey="totalBudget" name="Tổng vốn" fill="#94a3b8" radius={[0, 4, 4, 0]} barSize={14} />
+              <Bar dataKey="disbursedAmount" name="Đã giải ngân" fill={VN_BLUE} radius={[0, 4, 4, 0]} barSize={14} />
+            </BarChart>
+          </ResponsiveContainer>
+          {chartData.length > MAX_PROJECTS_CHART && (
+            <p className="text-xs text-slate-500 mt-2">Đang hiển thị {MAX_PROJECTS_CHART} / {chartData.length} dự án</p>
+          )}
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+          <h3 className="text-base font-bold text-[#0f172a] mb-4">Cơ cấu dòng tiền theo dự án</h3>
+          <p className="text-xs text-slate-500 mb-2">Rê chuột lên cột để xem lãi phát sinh và mức độ hoàn thành</p>
+          <ResponsiveContainer width="100%" height={chartHeight}>
+            <BarChart data={chartDataDisplay} layout="vertical" margin={{ top: 8, right: 80, left: 60, bottom: 8 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
+              <XAxis type="number" tickFormatter={(v) => `${(v / 1e9).toFixed(0)} Tỷ`} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+              <YAxis type="category" dataKey="code" width={56} tick={{ fontSize: 11, fill: '#0f172a' }} axisLine={false} tickLine={false} />
+              <Tooltip
+                content={({ active, payload, label }) => {
+                  if (!active || !payload?.length || !label) return null;
+                  const p = chartDataDisplay.find(x => x.code === label);
+                  if (!p) return null;
+                  return (
+                    <div className="bg-white border border-slate-200 rounded-lg shadow-lg p-3 text-sm">
+                      <p className="font-semibold text-slate-800 mb-1.5">{p.name}</p>
+                      <p className="text-slate-600">Đã giải ngân: {formatCurrency(p.disbursedAmount)}</p>
+                      <p className="text-slate-600">Chưa giải ngân: {formatCurrency(p.pendingAmount)}</p>
+                      <p className="text-amber-700 font-medium">Lãi phát sinh: {formatCurrency(p.interestAmount)}</p>
+                      <p className="text-blue-600 font-semibold mt-1">Hoàn thành: {p.completionRate}%</p>
+                    </div>
+                  );
+                }}
+              />
+              <Legend />
+              <Bar dataKey="disbursedAmount" name="Đã giải ngân" stackId="a" fill={VN_BLUE} radius={[0, 0, 0, 0]} barSize={24} />
+              <Bar dataKey="pendingAmount" name="Chưa giải ngân" stackId="a" fill="#94a3b8" radius={[0, 4, 4, 0]} barSize={24}>
+                <LabelList dataKey="completionRate" position="right" formatter={(v: number) => `${v}%`} style={{ fontSize: 10, fill: '#475569' }} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          {chartData.length > MAX_PROJECTS_CHART && (
+            <p className="text-xs text-slate-500 mt-2">Đang hiển thị {MAX_PROJECTS_CHART} / {chartData.length} dự án</p>
+          )}
+        </div>
       </div>
     </div>
   );

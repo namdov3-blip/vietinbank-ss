@@ -39,6 +39,21 @@ export const getVNEndOfDay = (date?: Date | string): Date => {
   return vnDate;
 };
 
+// Helper: Convert a date string to yyyy-mm-dd in VN timezone for comparison
+export const toVNDateString = (dateStr: string): string | null => {
+  if (!dateStr) return null;
+  try {
+    const d = toVNTime(dateStr);
+    if (isNaN(d.getTime())) return null;
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  } catch {
+    return null;
+  }
+};
+
 // Chuẩn hóa làm tròn: giữ 2 chữ số thập phân, .49 trở xuống làm tròn xuống, .50 trở lên làm tròn lên
 export const roundTo2 = (value: number): number => {
   if (!isFinite(value)) return 0;
@@ -628,7 +643,7 @@ export const exportTransactionsToExcel = (
     return sum + principalBase + interest + supplementary;
   }, 0);
 
-  // Tổng lãi PS = chỉ tính lãi từ các giao dịch CHƯA giải ngân (giống tempInterest trong bảng)
+  // Tổng lãi phát sinh = chỉ tính lãi từ các giao dịch CHƯA giải ngân (giống tempInterest trong bảng)
   let tempInterest = 0; // Lãi tạm tính (chưa giải ngân)
   let lockedInterest = 0; // Lãi đã chốt (đã giải ngân)
 
@@ -689,7 +704,7 @@ export const exportTransactionsToExcel = (
   rows.push(['BÁO CÁO TỔNG HỢP GIAO DỊCH', `Ngày xuất: ${formatTz(getVNNow(), 'dd/MM/yyyy', { timeZone: VN_TIMEZONE })}`]);
   rows.push([]); // Empty row
   rows.push(['THỐNG KÊ TỔNG QUAN']);
-  rows.push(['Tổng dự án', 'Hộ đã GN', 'Hộ chưa GN', 'Tiền đã GN (Gốc+Lãi)', 'Tiền chưa GN (Gốc+Lãi)', 'Tổng lãi PS']);
+  rows.push(['Tổng dự án', 'Hộ đã giải ngân', 'Hộ chưa giải ngân', 'Tiền đã giải ngân (Gốc+Lãi)', 'Tiền chưa giải ngân (Gốc+Lãi)', 'Tổng lãi phát sinh']);
   rows.push([
     Number(uniqueProjects) || 0,
     Number(disbursedItems.length) || 0,
@@ -711,7 +726,7 @@ export const exportTransactionsToExcel = (
     'Họ và tên',
     'Loại chi trả',
     'Số quyết định',
-    'Ngày GN',
+    'Ngày giải ngân',
     'Tổng phê duyệt',
     'Lãi phát sinh',
     'Tiền bổ sung',
@@ -770,8 +785,8 @@ export const exportTransactionsToExcel = (
     const projectCode = project ? (typeof project.code === 'string' ? project.code : String(project.code || '')) : (typeof t.projectId === 'string' ? t.projectId : String(t.projectId || ''));
     
     // Tổng chi trả:
-    // - Chưa GN: luôn dùng totalAvailable để SUM khớp stats "Tiền chưa GN"
-    // - Đã GN: ưu tiên disbursedTotal (đã chốt), nhưng nếu dữ liệu cũ bị làm tròn mất phần lẻ
+    // - Chưa giải ngân: luôn dùng totalAvailable để SUM khớp stats "Tiền chưa giải ngân"
+    // - Đã giải ngân: ưu tiên disbursedTotal (đã chốt), nhưng nếu dữ liệu cũ bị làm tròn mất phần lẻ
     //   thì fallback sang tổng tính lại (gốc + lãi + bổ sung) theo đúng ngày chốt.
     const storedDisbursedTotal = Number((t as any).disbursedTotal);
     const computedTotalPaid = roundTo2(totalAvailable);

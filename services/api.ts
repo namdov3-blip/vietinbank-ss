@@ -100,7 +100,6 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit & { skip401Ha
 // ============ AUTH ============
 export const authAPI = {
     login: async (name: string, password: string) => {
-        // Skip 401 handler for login endpoint - let it return error normally
         const data = await fetchAPI<{ token: string; data: any }>('/auth/login', {
             method: 'POST',
             body: JSON.stringify({ name, password }),
@@ -108,6 +107,21 @@ export const authAPI = {
         });
         localStorage.setItem('auth_token', data.token);
         return data;
+    },
+
+    register: async (name: string, password: string, confirmPassword: string, organization?: string) => {
+        const payload: { name: string; password: string; confirmPassword: string; organization?: string } = {
+            name,
+            password,
+            confirmPassword
+        };
+        if (organization) payload.organization = organization;
+
+        return fetchAPI<{ success: boolean; data: any; message?: string }>('/auth/register', {
+            method: 'POST',
+            body: JSON.stringify(payload),
+            skip401Handler: true
+        });
     },
 
     refresh: async () => {
