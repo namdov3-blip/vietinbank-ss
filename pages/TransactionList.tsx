@@ -80,17 +80,6 @@ export const TransactionList: React.FC<TransactionListProps> = ({
     const interestDate = t.effectiveInterestDate || project?.interestStartDate || (project as any)?.startDate;
     if (isDateWithinRange(interestDate)) return true;
     if (t.disbursementDate && isDateWithinRange(t.disbursementDate)) return true;
-    // Also include if the transaction spans the filter period:
-    // interest start date is BEFORE the range AND (not disbursed OR disbursed AFTER range start)
-    if (startDate && interestDate) {
-      const interestTime = new Date(interestDate).getTime();
-      const filterStart = new Date(startDate).getTime();
-      if (interestTime < filterStart) {
-        if (!t.disbursementDate) return true;
-        const disbTime = new Date(t.disbursementDate).getTime();
-        if (disbTime >= filterStart) return true;
-      }
-    }
     return false;
   }, [startDate, endDate, isDateWithinRange]);
 
