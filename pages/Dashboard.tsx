@@ -387,7 +387,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const KPICard = ({ title, value, subValue, icon: Icon, colorClass }: any) => (
     <GlassCard hoverEffect className="relative flex flex-col justify-between h-full min-h-[120px] shadow-sm border-slate-200">
       <div className="flex justify-between items-center mb-2">
-        <h3 className="text-[11px] font-semibold text-slate-600 uppercase tracking-widest">{title}</h3>
+        <h3 className="text-xs font-bold text-black uppercase tracking-widest">{title}</h3>
         <div className={`p-2 rounded-lg ${colorClass} bg-opacity-10 border border-current opacity-80`}>
           <Icon size={18} className={colorClass.replace('bg-', 'text-')} strokeWidth={2} />
         </div>
@@ -698,13 +698,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
 
           <div className="overflow-y-auto flex-1 custom-scrollbar p-2">
-            <table className="w-full text-left border-collapse">
-              <thead className="text-[10px] text-slate-500 font-bold uppercase sticky top-0 bg-white/95 backdrop-blur-md z-10 shadow-sm border-b border-slate-200">
+            <table className="w-full border-collapse border border-slate-200 rounded-lg overflow-hidden">
+              <thead className="text-[11px] text-black font-bold uppercase sticky top-0 bg-slate-50/95 backdrop-blur-md z-10 shadow-sm border-b border-slate-200">
                 <tr>
-                  <th className="p-3 w-8 text-center">#</th>
-                  <th className="p-3">Dự án</th>
-                  <th className="p-3 text-right">Giá trị dự án</th>
-                  <th className="p-3 w-14 text-center">%</th>
+                  <th className="p-3 w-10 text-center border-r border-slate-200">#</th>
+                  <th className="p-3 text-center border-r border-slate-200">Dự án</th>
+                  <th className="p-3 text-center border-r border-slate-200">Giá trị dự án</th>
+                  <th className="p-3 w-16 text-center">%</th>
                 </tr>
               </thead>
               <tbody className="text-sm divide-y divide-slate-200">
@@ -717,7 +717,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       `}
                     onClick={() => toggleProjectSelection(project.id)}
                   >
-                    <td className="p-3 text-center">
+                    <td className="p-3 text-center border-r border-slate-200">
                       <div className={`
                          w-4 h-4 rounded border flex items-center justify-center transition-all mx-auto
                          ${selectedProjectIds.includes(project.id) ? 'bg-blue-600 border-blue-600' : 'border-slate-200 bg-white group-hover:border-blue-400'}
@@ -725,11 +725,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         {selectedProjectIds.includes(project.id) && <Check size={10} className="text-white" strokeWidth={3} />}
                       </div>
                     </td>
-                    <td className="p-3">
-                      <p className={`font-semibold text-[13px] text-black truncate max-w-[120px] ${selectedProjectIds.includes(project.id) ? 'text-blue-800' : ''}`} title={project.name}>{project.name}</p>
-                      <p className="text-[10px] font-medium text-slate-500 truncate">{project.code}</p>
+                    <td className="p-3 text-center border-r border-slate-200">
+                      <p className={`font-semibold text-[13px] text-black truncate mx-auto max-w-[160px] ${selectedProjectIds.includes(project.id) ? 'text-blue-800' : ''}`} title={project.name}>{project.name}</p>
+                      <p className="text-[10px] font-medium text-slate-500 truncate mx-auto max-w-[160px]">{project.code}</p>
                     </td>
-                    <td className="p-3 text-right font-medium text-[12px] text-black">
+                    <td className="p-3 text-center font-medium text-[12px] text-black border-r border-slate-200">
                       {formatCurrency(project.totalBudget)}
                     </td>
                     <td className="p-3 text-center">
