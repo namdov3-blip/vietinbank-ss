@@ -707,12 +707,8 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                 //   thì fallback sang totalAvailable (gốc + lãi + bổ sung) tính lại theo đúng ngày chốt.
                 const storedDisbursedTotal = Number((t as any).disbursedTotal);
                 const computedTotalPaid = roundTo2(totalAvailable);
-                const displayTotalPaid =
-                  isDisbursed && isFinite(storedDisbursedTotal) && storedDisbursedTotal > 0
-                    ? (Math.abs(roundTo2(storedDisbursedTotal) - computedTotalPaid) >= 0.01
-                        ? computedTotalPaid
-                        : roundTo2(storedDisbursedTotal))
-                    : computedTotalPaid;
+                // Always use computed values so "Tiền/Tổng chi trả" and interest are consistent after date updates.
+                const displayTotalPaid = computedTotalPaid;
                 const withdrawnAmount = (t as any).withdrawnAmount || 0;
                 
                 // Tiền còn lại: chỉ hiển thị nếu đã rút một phần

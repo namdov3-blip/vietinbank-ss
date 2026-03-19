@@ -83,12 +83,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, curre
 
       {/* Hotline */}
       {!collapsed && (
-        <div className="px-5 py-3 border-t border-white/10">
+        <div className="px-5 py-3 border-t border-white/10 flex flex-col items-center text-center">
           <div className="flex items-center gap-2 text-white/40">
             <Phone size={13} strokeWidth={1.8} />
             <span className="text-[10px] font-medium">Hotline hỗ trợ</span>
           </div>
-          <p className="text-white font-bold text-sm mt-0.5 tracking-wide">0904678686</p>
+          <p className="text-white font-bold text-sm mt-0.5 tracking-wide">
+            A Đức Huy - SĐT: 0866565689
+          </p>
         </div>
       )}
       {collapsed && (

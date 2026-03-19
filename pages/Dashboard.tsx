@@ -504,11 +504,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
       const laiPhatSinh = calculateInterestSmart(principalBase, baseDate, calcDate);
       const supplementary = t.supplementaryAmount || 0;
       const totalAvailable = principalBase + laiPhatSinh + supplementary;
-      const tongChiTra = (t as any).withdrawnAmount
-        ? (t as any).withdrawnAmount
-        : effectiveStatus === TransactionStatus.DISBURSED && (t as any).disbursedTotal
-          ? (t as any).disbursedTotal
-          : totalAvailable;
+      // Always use computed values (except partial withdraw) so amounts match latest calculation dates.
+      const tongChiTra = (t as any).withdrawnAmount ? (t as any).withdrawnAmount : totalAvailable;
       const ngayGN = effectiveStatus === TransactionStatus.DISBURSED && t.disbursementDate
         ? formatDate(t.disbursementDate)
         : baseDate ? formatDate(baseDate) : '-';

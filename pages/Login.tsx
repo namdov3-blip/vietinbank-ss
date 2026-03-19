@@ -146,7 +146,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
           >
             <div className="text-center mb-7">
               <h2 className="text-[22px] font-extrabold text-white leading-tight">
-                Chào mừng quý khách đến với Vietinbank <span className="text-[#0b5fa5]">GPMB</span>
+                Chào mừng quý khách đến với VietinBank <span className="text-[#0b5fa5]">GPMB</span>
               </h2>
             </div>
 
@@ -239,7 +239,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
           >
             <div className="text-center mb-7">
               <h2 className="text-[22px] font-extrabold text-white leading-tight">
-                Chào mừng quý khách đến với Vietinbank <span className="text-[#0b5fa5]">GPMB</span>
+                Chào mừng quý khách đến với VietinBank <span className="text-[#0b5fa5]">GPMB</span>
               </h2>
               <p className="text-xs font-semibold text-white/80 mt-2">
                 Đăng ký tài khoản mới

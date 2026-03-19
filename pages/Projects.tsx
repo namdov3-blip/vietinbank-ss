@@ -164,12 +164,8 @@ export const Projects: React.FC<ProjectsProps> = ({
             ? calculateInterestSmart(t.compensation.totalApproved, baseDate, new Date(t.disbursementDate))
             : 0;
           const computedTotal = roundTo2(t.compensation.totalApproved + interest + supplementary);
-          const storedTotal = Number((t as any).disbursedTotal);
-          const totalToUse =
-            isFinite(storedTotal) && storedTotal > 0 && Math.abs(roundTo2(storedTotal) - computedTotal) < 0.01
-              ? roundTo2(storedTotal)
-              : computedTotal;
-          return acc + totalToUse;
+          // Always use computed values so UI stays consistent when interest calculation dates change.
+          return acc + computedTotal;
         }, 0);
 
       const disbursedPartial = projectTrans
@@ -189,12 +185,7 @@ export const Projects: React.FC<ProjectsProps> = ({
           interest = calculateInterestSmart(principalBase, baseDate, new Date());
         }
         const computedTotal = roundTo2(principalBase + interest + supplementary);
-        if (t.status === TransactionStatus.DISBURSED) {
-          const storedTotal = Number((t as any).disbursedTotal);
-          if (isFinite(storedTotal) && storedTotal > 0 && Math.abs(roundTo2(storedTotal) - computedTotal) < 0.01) {
-            return sum + roundTo2(storedTotal);
-          }
-        }
+        // For DISBURSED transactions we also rely on computed totals to reflect the latest calculation dates.
         return sum + computedTotal;
       }, 0);
 
