@@ -1,6 +1,6 @@
 import mongoose, { Schema, Document, Types } from 'mongoose';
 
-export const ORGANIZATIONS = ['Đông Anh', 'Phúc Thịnh', 'Thiên Lộc', 'Thư Lâm', 'Vĩnh Thanh'] as const;
+export const ORGANIZATIONS = ['Nội Bài', 'Kim Anh', 'Sóc Sơn', 'Trung Giã', 'Đa Phúc'] as const;
 export type OrganizationType = typeof ORGANIZATIONS[number];
 
 export interface IProject extends Document {

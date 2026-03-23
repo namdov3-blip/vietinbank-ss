@@ -527,11 +527,11 @@ export const Admin: React.FC<AdminProps> = ({
                   className="w-full bg-white border border-slate-200 rounded px-3 py-2 text-sm focus:border-blue-500 outline-none"
                 >
                   <option value="">-- Chọn Organization --</option>
-                  <option value="Đông Anh">Đông Anh</option>
-                  <option value="Phúc Thịnh">Phúc Thịnh</option>
-                  <option value="Thiên Lộc">Thiên Lộc</option>
-                  <option value="Thư Lâm">Thư Lâm</option>
-              <option value="Vĩnh Thanh">Vĩnh Thanh</option>
+                  <option value="Nội Bài">Nội Bài</option>
+                  <option value="Kim Anh">Kim Anh</option>
+                  <option value="Sóc Sơn">Sóc Sơn</option>
+                  <option value="Trung Giã">Trung Giã</option>
+                  <option value="Đa Phúc">Đa Phúc</option>
               <option value="Nam World">Nam World (Xem tất cả org)</option>
                 </select>
               </div>
@@ -619,11 +619,11 @@ export const Admin: React.FC<AdminProps> = ({
                   className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 >
                   <option value="">-- Chọn Organization --</option>
-                  <option value="Đông Anh">Đông Anh</option>
-                  <option value="Phúc Thịnh">Phúc Thịnh</option>
-                  <option value="Thiên Lộc">Thiên Lộc</option>
-                  <option value="Thư Lâm">Thư Lâm</option>
-                  <option value="Vĩnh Thanh">Vĩnh Thanh</option>
+                  <option value="Nội Bài">Nội Bài</option>
+                  <option value="Kim Anh">Kim Anh</option>
+                  <option value="Sóc Sơn">Sóc Sơn</option>
+                  <option value="Trung Giã">Trung Giã</option>
+                  <option value="Đa Phúc">Đa Phúc</option>
                 </select>
               </div>
 

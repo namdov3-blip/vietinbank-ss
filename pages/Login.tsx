@@ -7,7 +7,7 @@ interface LoginProps {
   onLogin: (user: User) => void;
 }
 
-const ORGANIZATIONS = ['Đông Anh', 'Phúc Thịnh', 'Thiên Lộc', 'Thư Lâm', 'Vĩnh Thanh', 'Nam World'] as const;
+const ORGANIZATIONS = ['Nội Bài', 'Kim Anh', 'Sóc Sơn', 'Trung Giã', 'Đa Phúc', 'Nam World'] as const;
 
 export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [activeModal, setActiveModal] = useState<'none' | 'login' | 'register'>('none');

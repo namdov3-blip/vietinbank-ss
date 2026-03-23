@@ -38,7 +38,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, curre
       {/* Logo + chi nhánh */}
       <div
         className={`pt-5 pb-5 flex border-b border-white/10 ${collapsed ? 'px-3' : 'px-5'} justify-center ${collapsed ? 'items-center' : 'flex-col items-center gap-2'}`}
-        title={collapsed ? 'Chi Nhánh Đông Anh' : undefined}
+        title={collapsed ? `Chi Nhánh ${currentUser.organization || 'Sóc Sơn'}` : undefined}
       >
         {collapsed ? (
           <div className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center flex-shrink-0">
@@ -62,7 +62,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, curre
               }}
             />
             <p className="text-center text-[11px] font-semibold text-white/95 leading-snug tracking-wide px-1">
-              Chi Nhánh Đông Anh
+              Chi Nhánh {currentUser.organization || 'Sóc Sơn'}
             </p>
           </>
         )}

@@ -62,15 +62,51 @@ export const PrintPhieuChiBatch: React.FC<PrintPhieuChiBatchProps> = ({
     };
 
     const getOrgHeader = () => {
-        const org = currentUser.organization || 'Đông Anh';
+        const org = currentUser.organization || 'Sóc Sơn';
         const headers: Record<string, { name: string; address: string }> = {
-            'Đông Anh': { name: 'UBND xã Đông Anh', address: 'Số 68 đường Cao Lỗ, xã Đông Anh, Hà Nội' },
-            'Phúc Thịnh': { name: 'UBND xã Phúc Thịnh', address: 'Xã Phúc Thịnh, Hà Nội' },
-            'Thiên Lộc': { name: 'UBND xã Thiên Lộc', address: 'Xã Thiên Lộc, Hà Nội' },
-            'Thư Lâm': { name: 'UBND xã Thư Lâm', address: 'Xã Thư Lâm, Hà Nội' },
-            'Vĩnh Thanh': { name: 'UBND xã Vĩnh Thanh', address: ' Xã Vĩnh Thanh, Hà Nội' }
+            'Sóc Sơn': {
+                name: 'BAN QUẢN LÝ DỰ ÁN ĐẦU TƯ - HẠ TẦNG XÃ SÓC SƠN',
+                address: 'Số 1 - đường Núi Đôi, xã Sóc Sơn, Thành phố Hà Nội, Việt Nam.'
+            },
+            'Trung Giã': {
+                name: 'Ban quản lý dự án đầu tư - hạ tầng xã Trung Giã',
+                address: 'Thôn 4, xã Trung Giã, TP Hà Nội.'
+            },
+            'Nội Bài': {
+                name: 'Ban quản lý dự án đầu tư - hạ tầng xã Nội Bài',
+                address: 'thôn Xuân Bách, xã Nội Bài, TP Hà Nội, Việt Nam.'
+            },
+            'Đa Phúc': {
+                name: 'Ban quản lý dự án đầu tư - hạ tầng xã Đa Phúc',
+                address: 'thôn Yên Tàng, xã Đa Phúc, TP Hà Nội.'
+            },
+            'Kim Anh': {
+                name: 'BAN QUẢN LÝ DỰ ÁN ĐẦU TƯ - HẠ TẦNG XÃ KIM ANH',
+                address: 'thôn Ninh Cầm, xã Kim Anh, TP Hà Nội.'
+            },
+            // Backward compatibility (old organization values in DB)
+            'Đông Anh': {
+                name: 'Ban quản lý dự án đầu tư - hạ tầng xã Nội Bài',
+                address: 'thôn Xuân Bách, xã Nội Bài, TP Hà Nội, Việt Nam.'
+            },
+            'Phúc Thịnh': {
+                name: 'BAN QUẢN LÝ DỰ ÁN ĐẦU TƯ - HẠ TẦNG XÃ KIM ANH',
+                address: 'thôn Ninh Cầm, xã Kim Anh, TP Hà Nội.'
+            },
+            'Thiên Lộc': {
+                name: 'BAN QUẢN LÝ DỰ ÁN ĐẦU TƯ - HẠ TẦNG XÃ SÓC SƠN',
+                address: 'Số 1 - đường Núi Đôi, xã Sóc Sơn, Thành phố Hà Nội, Việt Nam.'
+            },
+            'Thư Lâm': {
+                name: 'Ban quản lý dự án đầu tư - hạ tầng xã Trung Giã',
+                address: 'Thôn 4, xã Trung Giã, TP Hà Nội.'
+            },
+            'Vĩnh Thanh': {
+                name: 'Ban quản lý dự án đầu tư - hạ tầng xã Đa Phúc',
+                address: 'thôn Yên Tàng, xã Đa Phúc, TP Hà Nội.'
+            }
         };
-        return headers[org] || headers['Đông Anh'];
+        return headers[org] || headers['Sóc Sơn'];
     };
 
     const orgInfo = getOrgHeader();
@@ -151,7 +187,6 @@ export const PrintPhieuChiBatch: React.FC<PrintPhieuChiBatchProps> = ({
                 <div className="flex justify-between items-start mb-6">
                     <div className="border-2 border-black p-3" style={{ maxWidth: '280px' }}>
                         <p className="font-bold text-sm underline">{orgInfo.name}</p>
-                        <p className="font-bold text-sm">Ban quản lý Dự án đầu tư – hạ tầng</p>
                         <p className="text-sm underline">{orgInfo.address}</p>
                     </div>
                     <div className="text-right">
